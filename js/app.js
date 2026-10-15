@@ -44,6 +44,18 @@ const $ytThumbnailPrompt = document.getElementById('ytThumbnailPrompt');
 const $ytProductionPlan = document.getElementById('ytProductionPlan');
 const $ytTags           = document.getElementById('ytTags');
 
+const $generateVideo    = document.getElementById('generateVideoBtn');
+const $videoProgressCard = document.getElementById('videoProgressCard');
+const $progressBar      = document.getElementById('progressBarFill');
+const $progressStep     = document.getElementById('progressStep');
+const $progressPercent  = document.getElementById('progressPercent');
+const $videoPreviewCard = document.getElementById('videoPreviewCard');
+const $videoPlayer      = document.getElementById('videoPlayer');
+const $videoSource      = document.getElementById('videoSource');
+const $videoDownload    = document.getElementById('videoDownload');
+const $videoSize        = document.getElementById('videoSize');
+const $videoPrereqWarn  = document.getElementById('videoPrereqWarning');
+
 // ===========================================================================
 //  State
 // ===========================================================================
@@ -101,6 +113,18 @@ const translations = {
     ytThumbnailPlaceholder: 'Thumbnail concept will appear here',
     ytThumbnailPromptPlaceholder: 'AI image generation prompt will appear here',
     ytTagsPlaceholder: 'Tags will appear here, separated by commas',
+    videoProduction: 'Video Production',
+    videoHelp: 'Create a complete MP4 video with AI-generated scenes, narration, subtitles, and sound.',
+    videoNoKeys: 'Video production requires a Hugging Face API key (for images & speech). Configure HF_API_KEY via the setup flow.',
+    generateVideo: 'Create Full Video',
+    videoProgress: 'Production Progress',
+    progressStarting: 'Starting...',
+    videoPreview: 'Video Preview & Download',
+    downloadVideo: 'Download MP4',
+    videoError: 'Video generation failed. See details below.',
+    videoTimeout: 'Video generation is taking longer than expected. Check progress or refresh the page.',
+    videoError: 'Video generation failed. See details below.',
+    videoTimeout: 'Video generation is taking longer than expected. Check progress or refresh the page.',
   },
   ar: {
     title: 'هورر ستوديو آي أيه',
@@ -145,6 +169,16 @@ const translations = {
     ytThumbnailPlaceholder: 'سيظهر مفهوم الصورة المصغرة هنا',
     ytThumbnailPromptPlaceholder: 'سيظهر موجه لتوليد صورة مصغرة هنا',
     ytTagsPlaceholder: 'سيظهر العلامات هنا، مفصولة بفواصل',
+    videoProduction: 'إنتاج الفيديو',
+    videoHelp: 'أنشئ فيديو MP4 كامل بمشاهد ذكاء اصطناعي، تركيض، ترجمات، وأصوات.',
+    videoNoKeys: 'يتطلب إنتاج الفيديو مفتاح Hugging Face API. قم بتكوين HF_API_KEY عبر تدفق الإعداد.',
+    generateVideo: 'إنشاء فيديو كامل',
+    videoProgress: 'تقدم الإنتاج',
+    progressStarting: 'البدء...',
+    videoPreview: 'معاينة الفيديو وتحميله',
+    downloadVideo: 'تنزيل MP4',
+    videoError: 'فشل إنشاء الفيديو. انظر التفاصيل أدناه.',
+    videoTimeout: 'يأخذ إنشاء الفيديو وقتاً أطول من المتوقع. تحقق من التقدم أوحدث الصفحة.',
   },
 };
 
@@ -278,11 +312,18 @@ if ($horrorStyle) {
   });
 }
 
+if ($generateVideo) {
+  $generateVideo.addEventListener('click', handleGenerateVideo);
+}
+
 // ===========================================================================
 //  Initialization
 // ===========================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Safety: ensure loading overlay is hidden on page load
+  if (loadingSafetyTimer) clearTimeout(loadingSafetyTimer);
+  $loading.classList.add('hidden');
   updateDurationOptions();
   updateStyleOptions();
   switchLanguage(currentLanguage);
@@ -500,6 +541,154 @@ function handleCopyYoutube() {
   const meta = collectYoutubeMetadata();
   if (!meta) return;
   copyToClipboard(meta, getText('copyMetadata') + ' ' + (currentLanguage === 'ar' ? 'تم النسخ' : 'copied.'));
+}
+
+// ===========================================================================
+//  Video Production
+// ===========================================================================
+
+let currentVideoJobId = null;
+let videoPollInterval = null;
+
+async function handleGenerateVideo() {
+  const idea = $idea.value.trim();
+
+  if (!idea) {
+    showStatus('Please enter a story idea before generating a video.', 'warning');
+    return;
+  }
+
+  if (!currentStory) {
+    showStatus('Please generate a story first before creating a video.', 'warning');
+    return;
+  }
+
+  if ($demoToggle.checked) {
+    showStatus('[DEMO MODE] Video generation is not available in Demo Mode. Disable Demo Mode and configure API keys.', 'warning');
+    return;
+  }
+
+  // Check video service health first
+  try {
+    const healthRes = await fetchWithTimeout('/api/video/health');
+    const health = await healthRes.json();
+    if (!health.hfConfigured) {
+      showStatus(
+        'Video production requires a Hugging Face API key. Configure HF_API_KEY via /setup. ' +
+        'Hugging Face offers free inference for image generation and text-to-speech.',
+        'warning'
+      );
+      $videoPrereqWarn.classList.remove('hidden');
+      return;
+    }
+  } catch (err) {
+    showStatus('Could not check video service status. Try again.', 'warning');
+    return;
+  }
+
+  $videoPrereqWarn.classList.add('hidden');
+
+  // Start video generation
+  setLoading(true, getText('videoProduction') || 'Creating your horror video...');
+
+  try {
+    const res = await fetchWithTimeout('/api/generate/video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        story: currentStory,
+        idea,
+        length: parseInt($length.value, 10),
+        format: currentFormat,
+        style: currentStyle,
+        language: currentLanguage,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      handleApiError(data, 'video generation');
+      return;
+    }
+
+    currentVideoJobId = data.jobId;
+    showVideoProgress();
+    pollVideoStatus();
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      showStatus('Request timed out. Please try again.', 'warning');
+    } else {
+      showStatus('Network error: could not reach the backend server. ' + err.message, 'warning');
+    }
+    setLoading(false);
+  }
+}
+
+function showVideoProgress() {
+  $videoProgressCard.classList.remove('hidden');
+  $videoPreviewCard.classList.add('hidden');
+  $progressBar.style.width = '0%';
+  $progressStep.textContent = getText('progressStarting') || 'Starting...';
+  $progressPercent.textContent = '0%';
+  $generateVideo.disabled = true;
+  showStatus('Video production started. Monitor progress below.', 'info');
+}
+
+function pollVideoStatus() {
+  if (videoPollInterval) clearInterval(videoPollInterval);
+
+  videoPollInterval = setInterval(async () => {
+    try {
+      const res = await fetchWithTimeout('/api/video/status/' + currentVideoJobId);
+      const data = await res.json();
+
+      $progressBar.style.width = data.progress + '%';
+      $progressPercent.textContent = data.progress + '%';
+      $progressStep.textContent = data.message || (data.step || 'Working...');
+
+      if (data.status === 'complete') {
+        clearInterval(videoPollInterval);
+        videoPollInterval = null;
+        setLoading(false);
+        $generateVideo.disabled = false;
+        showVideoResult(data);
+      } else if (data.status === 'error') {
+        clearInterval(videoPollInterval);
+        videoPollInterval = null;
+        setLoading(false);
+        $generateVideo.disabled = false;
+        showStatus('Video production failed: ' + (data.error || 'Unknown error'), 'warning');
+      }
+    } catch (err) {
+      // Keep polling even on transient network errors
+    }
+  }, 3000);
+}
+
+function showVideoResult(data) {
+  $videoProgressCard.classList.add('hidden');
+  $videoPreviewCard.classList.remove('hidden');
+
+  if (data.result && data.result.videoUrl) {
+    $videoSource.src = data.result.videoUrl;
+    $videoDownload.href = data.result.videoUrl;
+    $videoPlayer.load();
+
+    const sizeMB = (data.result.size / (1024 * 1024)).toFixed(1);
+    let infoText = data.result.duration + 's · ' + sizeMB + ' MB';
+    if (data.result.isFallback) {
+      infoText += ' · Text-only preview (no HF key)';
+    }
+    $videoSize.textContent = infoText;
+    showStatus(data.result.isFallback
+      ? 'Video rendered (text-only fallback). Configure HF_API_KEY for AI images & narration.'
+      : 'Video production complete! Preview below or download the MP4.',
+      data.result.isFallback ? 'warning' : 'success'
+    );
+  } else {
+    showStatus('Video job completed but no file was found.', 'warning');
+  }
 }
 
 // ===========================================================================

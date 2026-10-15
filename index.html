@@ -84,7 +84,7 @@
         <button id="generateBtn" class="btn btn-primary btn-block" data-i18n="generateStory">Generate Story</button>
       </section>
 
-      <div id="loadingOverlay" class="loading-overlay">
+      <div id="loadingOverlay" class="loading-overlay hidden">
         <div class="loading-spinner"></div>
         <p id="loadingText" class="loading-text" data-i18n="loadingStory">Generating your horror story...</p>
       </div>
@@ -139,11 +139,52 @@
 
         <button id="copyYoutubeBtn" class="btn btn-secondary btn-block" data-i18n="copyMetadata">Copy Metadata</button>
       </section>
+
+      <section class="video-card card">
+        <h2 class="card-title" data-i18n="videoProduction">Video Production</h2>
+        <p class="help-text-small" data-i18n="videoHelp">
+          Create a complete MP4 video with AI-generated scenes, narration, subtitles, and sound.
+        </p>
+
+        <div class="video-prereq-warning hidden" id="videoPrereqWarning">
+          <div class="message message-error" data-i18n="videoNoKeys">
+            Video production requires a Hugging Face API key (for images & speech).
+            Configure HF_API_KEY via the setup flow.
+          </div>
+        </div>
+
+        <button id="generateVideoBtn" class="btn btn-primary btn-block" data-i18n="generateVideo">Create Full Video</button>
+      </section>
+
+      <section class="video-progress-card card hidden" id="videoProgressCard">
+        <h2 class="card-title" data-i18n="videoProgress">Production Progress</h2>
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="progressBarFill"></div>
+        </div>
+        <div class="progress-info">
+          <span class="progress-step" id="progressStep" data-i18n="progressStarting">Starting...</span>
+          <span class="progress-percent" id="progressPercent">0%</span>
+        </div>
+      </section>
+
+      <section class="video-preview-card card hidden" id="videoPreviewCard">
+        <h2 class="card-title" data-i18n="videoPreview">Video Preview & Download</h2>
+        <div class="video-wrapper">
+          <video id="videoPlayer" class="video-preview" controls preload="metadata">
+            <source id="videoSource" src="" type="video/mp4">
+            Your browser does not support video playback.
+          </video>
+        </div>
+        <div class="video-info">
+          <span class="video-size" id="videoSize"></span>
+          <a id="videoDownload" class="btn btn-secondary" href="#" download="horror_studio_video.mp4" data-i18n="downloadVideo">Download MP4</a>
+        </div>
+      </section>
     </main>
 
     <footer class="footer">
       <div id="status" class="status"></div>
-      <p class="footer-text">Horror Studio AI &mdash; Stage 1</p>
+      <p class="footer-text">Horror Studio AI &mdash; Stage 2</p>
     </footer>
   </div>
 

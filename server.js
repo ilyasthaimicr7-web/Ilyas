@@ -34,12 +34,56 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
 const { callGemini, parseJsonResponse } = require('./lib/ai/gemini');
 const { buildStoryPrompt } = require('./lib/prompts/story');
 const { buildYouTubePrompt } = require('./lib/prompts/youtube');
+const { segmentStory } = require('./lib/video/scene-segmenter');
+const { generateImage } = require('./lib/ai/image');
+const { generateSpeech } = require('./lib/ai/tts');
+const { generateSrt } = require('./lib/video/subtitles');
+const { renderVideo, renderFallbackVideo, cleanupJob } = require('./lib/video/renderer');
 
 const app = express();
 const PORT = process.env.PORT || 8123;
+
+// ──  Video production job state (in-memory) ──────────────────────
+const videoJobs = new Map();
+const VIDEOS_DIR = path.join(__dirname, 'videos');
+
+function createJob() {
+  const jobId = crypto.randomBytes(8).toString('hex');
+  const jobDir = path.join(VIDEOS_DIR, 'temp', jobId);
+  if (!fs.existsSync(jobDir)) fs.mkdirSync(jobDir, { recursive: true });
+  const job = {
+    id: jobId,
+    status: 'pending',
+    step: 'initializing',
+    progress: 0,
+    message: 'Preparing to generate video...',
+    result: null,
+    error: null,
+    createdAt: Date.now(),
+  };
+  videoJobs.set(jobId, job);
+  return { job, jobDir };
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function getAudioDuration(filePath) {
+  try {
+    const { stdout } = await execAsync(`ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`, { maxBuffer: 1024 * 1024 });
+    const dur = parseFloat(stdout.trim());
+    return { duration: isNaN(dur) ? 0 : dur };
+  } catch (err) {
+    return { duration: 0 };
+  }
+}
 
 // ──  Security: Setup token (rotated on each server restart) ──
 const SETUP_TOKEN = crypto.randomBytes(16).toString('hex').substring(0, 16);
@@ -485,7 +529,230 @@ app.post('/api/generate/youtube', async (req, res) => {
   }
 });
 
-// ──  Error handlers ─────────────────────────────────────────
+// ──  API: Generate Video (Full Production) ─────────────────────
+
+app.post('/api/generate/video', async (req, res) => {
+  const { story, idea, length, format, style, language } = req.body;
+
+  if (!story || typeof story !== 'string' || story.trim().length === 0) {
+    return res.status(400).json({ error: 'Story text is required.', code: 'VALIDATION_ERROR' });
+  }
+
+  const hasGemini = !!process.env.GEMINI_API_KEY;
+  const hasHFKey = !!process.env.HF_API_KEY;
+
+  // If HF key is not set, fall back to text-only rendering (still produces real MP4).
+  // If neither key is set, still allow fallback (story was already generated).
+  if (!hasGemini && !hasHFKey) {
+    // Log that we're using fallback mode
+    console.log('[video] No API keys configured — will use text-only fallback rendering.');
+  }
+
+  const { job, jobDir } = createJob();
+  const formatType = format === 'shorts' ? 'shorts' : 'video';
+  const duration = formatType === 'shorts'
+    ? parseInt(length, 10) || 60
+    : parseInt(length, 10) || 5;
+
+  res.json({ jobId: job.id, message: 'Video production started.' });
+
+  // Start the async production pipeline
+  processVideoJob(job, jobDir, story, idea || '', formatType, duration, style || 'none', language || 'en')
+    .catch(err => {
+      console.error('[video] Job ' + job.id + ' failed:', err.message);
+      job.status = 'error';
+      job.error = err.message;
+      job.message = 'Video generation failed: ' + (err.userMessage || err.message);
+    });
+});
+
+/**
+ * Full video production pipeline.
+ * Steps: segment story -> generate images -> generate speech -> create subtitles -> render MP4
+ */
+async function processVideoJob(job, jobDir, story, idea, format, duration, style, language) {
+  const steps = [
+    'segmenting_story',
+    'generating_images',
+    'generating_speech',
+    'creating_subtitles',
+    'rendering_video',
+  ];
+
+  try {
+    const hasHFKey = !!process.env.HF_API_KEY;
+
+    if (!hasHFKey) {
+      // Fallback: render with text placeholders + silence (no AI image/TTS)
+      job.step = 'rendering_fallback';
+      job.progress = 50;
+      job.message = 'Rendering video with text placeholders (configure HF_API_KEY for AI images & narration)...';
+
+      const result = await renderFallbackVideo(jobDir, story.substring(0, 2000), format, duration);
+      job.progress = 100;
+      job.status = 'complete';
+      job.step = 'done';
+      job.message = 'Video rendered (text-only fallback). Configure HF_API_KEY for AI images and narration.';
+      job.result = {
+        videoUrl: '/videos/' + job.id + '/final.mp4',
+        size: result.size,
+        duration: result.duration,
+        isFallback: true,
+      };
+      console.log('[video] Job ' + job.id + ' complete (fallback). Size:', result.size);
+      return;
+    }
+
+    // Step 1: Segment story into scenes
+    job.step = 'segmenting_story';
+    job.progress = 10;
+    job.message = 'Dividing story into scenes...';
+
+    const scenes = await segmentStory(story, format, duration);
+    console.log('[video] Job ' + job.id + ': segmented into ' + scenes.length + ' scenes');
+    job.progress = 20;
+
+    // Step 2: Generate image for each scene
+    job.step = 'generating_images';
+    job.message = 'Generating scene images... (1/' + scenes.length + ')';
+
+    const imagePaths = [];
+    for (let i = 0; i < scenes.length; i++) {
+      const imgPath = path.join(jobDir, 'scene_' + (i + 1) + '.png');
+      job.message = 'Generating scene images... (' + (i + 1) + '/' + scenes.length + ')';
+      job.progress = 20 + Math.round((i / scenes.length) * 25);
+
+      let attempts = 0;
+      while (attempts < 3) {
+        try {
+          const imageBuffer = await generateImage(scenes[i].visual, {
+            width: 1024,
+            height: 1024,
+          });
+          fs.writeFileSync(imgPath, imageBuffer);
+          imagePaths.push(imgPath);
+          break;
+        } catch (err) {
+          attempts++;
+          if (attempts >= 3) throw err;
+          console.warn('[video] Image retry ' + attempts + ' for scene ' + (i + 1) + ':', err.code);
+          await delay(2000 * attempts);
+        }
+      }
+    }
+    job.progress = 45;
+
+    // Step 3: Generate speech for each scene
+    job.step = 'generating_speech';
+    job.message = 'Generating narration... (1/' + scenes.length + ')';
+
+    const audioPaths = [];
+    const audioDurations = [];
+    for (let i = 0; i < scenes.length; i++) {
+      const audioPath = path.join(jobDir, 'audio_' + (i + 1) + '.wav');
+      job.message = 'Generating narration... (' + (i + 1) + '/' + scenes.length + ')';
+      job.progress = 45 + Math.round((i / scenes.length) * 20);
+
+      let attempts = 0;
+      while (attempts < 3) {
+        try {
+          const { buffer, sampleRate } = await generateSpeech(scenes[i].narration);
+          fs.writeFileSync(audioPath, buffer);
+          audioPaths.push(audioPath);
+
+          const { duration: dur } = await getAudioDuration(audioPath);
+          audioDurations.push(dur || scenes[i].duration || 10);
+          break;
+        } catch (err) {
+          attempts++;
+          if (attempts >= 3) throw err;
+          console.warn('[video] TTS retry ' + attempts + ' for scene ' + (i + 1) + ':', err.code);
+          await delay(2000 * attempts);
+        }
+      }
+    }
+    job.progress = 65;
+
+    // Step 4: Generate subtitles
+    job.step = 'creating_subtitles';
+    job.message = 'Creating subtitles...';
+    const srtPath = path.join(jobDir, 'subtitles.srt');
+    const srtContent = generateSrt(scenes, audioDurations);
+    fs.writeFileSync(srtPath, srtContent);
+    job.progress = 70;
+
+    // Step 5: Render final video (renderer handles ambience internally)
+    job.step = 'rendering_video';
+    job.message = 'Rendering video with FFmpeg...';
+
+    const renderScenes = scenes.map((scene, i) => ({
+      ...scene,
+      duration: audioDurations[i],
+      imagePath: imagePaths[i],
+      audioPath: audioPaths[i],
+    }));
+
+    const result = await renderVideo(jobDir, renderScenes, audioDurations, srtPath, format);
+    job.progress = 100;
+    job.status = 'complete';
+    job.step = 'done';
+    job.message = 'Video rendered successfully!';
+    job.result = {
+      videoUrl: '/videos/' + job.id + '/final.mp4',
+      size: result.size,
+      duration: Math.round(result.duration),
+    };
+
+    console.log('[video] Job ' + job.id + ' complete. Size:', result.size, 'Duration:', result.duration);
+  } catch (err) {
+    console.error('[video] Job ' + job.id + ' error:', err);
+    job.status = 'error';
+    job.error = err.message;
+    job.message = 'Failed: ' + (err.userMessage || err.message);
+  }
+}
+
+// ──  Video job status & download ─────────────────────────────────
+
+app.get('/api/video/status/:jobId', (req, res) => {
+  const job = videoJobs.get(req.params.jobId);
+  if (!job) {
+    return res.status(404).json({ error: 'Job not found.', code: 'NOT_FOUND' });
+  }
+  res.json({
+    jobId: job.id,
+    status: job.status,
+    step: job.step,
+    progress: job.progress,
+    message: job.message,
+    result: job.result,
+    error: job.error,
+  });
+});
+
+app.get('/videos/:jobId/final.mp4', (req, res) => {
+  const filePath = path.join(VIDEOS_DIR, req.params.jobId, 'final.mp4');
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Video not found or still rendering.', code: 'NOT_FOUND' });
+  }
+  res.set('Content-Type', 'video/mp4');
+  res.set('Accept-Ranges', 'bytes');
+  res.sendFile(filePath);
+});
+
+// ──  Video service health ───────────────────────────────────────
+
+app.get('/api/video/health', (_req, res) => {
+  const hasGemini = !!process.env.GEMINI_API_KEY;
+  const hasHF = !!process.env.HF_API_KEY;
+  res.json({
+    geminiConfigured: hasGemini,
+    hfConfigured: hasHF,
+    imageModel: process.env.HF_IMAGE_MODEL || 'stabilityai/stable-diffusion-xl-base-1024',
+    ttsModel: process.env.HF_TTS_MODEL || 'facebook/fastspeech2-ljspeech',
+    ffmpegAvailable: true,
+  });
+});
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found.', code: 'NOT_FOUND' });
@@ -526,5 +793,10 @@ app.listen(PORT, () => {
   console.log('    POST /api/setup/reset    (requires current key)');
   console.log('    POST /api/generate/story');
   console.log('    POST /api/generate/youtube');
+  console.log('    POST /api/generate/video   (full AI video production)');
+  console.log('    GET  /api/video/status/:jobId');
+  console.log('    GET  /api/video/health');
+  console.log('    GET  /videos/:jobId/final.mp4');
+  console.log('  Video: ' + (process.env.HF_API_KEY ? 'AI images + TTS available' : 'text-only fallback mode'));
   console.log('\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\n');
 });
