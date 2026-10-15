@@ -147,6 +147,15 @@
     </footer>
   </div>
 
-  <script src="/js/app.js" defer></script>
+  <script src="/js/app.js?v=0.2.0" defer></script>
+  <script>
+    window.addEventListener('error', function(e) {
+      console.error('Global error:', e.error);
+    });
+    window.addEventListener('unhandledrejection', function(e) {
+      console.error('Unhandled rejection:', e.reason);
+      e.preventDefault();
+    });
+  </script>
 </body>
 </html>

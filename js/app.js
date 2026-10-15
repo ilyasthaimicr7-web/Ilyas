@@ -221,6 +221,33 @@ When the police found Mara the next morning, she was sitting cross-legged in the
 
 The house was sold last month. The new owners say the walls don't weep anymore. They say that's because nothing's left to weep for.`;
 
+const DEMO_YOUTUBE = {
+  title: '[CREEPY STORY] The Weeping Child in the Walls of Sycamore Lane',
+  description: `In this unsettling tale, Mara moves into a long-abandoned Victorian only to discover that something far more sinister than dust has been waiting inside the walls. A child's weeping, a hidden room, and a porcelain doll with a voice that doesn't belong to it — some doors, once opened, can never be closed again.\n\n🔔 Subscribe for more horror stories every week!\n🔔 Turn on notifications so you never miss a new video!\n\n#HorrorStory #Creepy #ShortStory #Scary #Horror #TheWeepingChild #ShortFilm #ScaryStory`,
+  thumbnail: `A cracked porcelain doll's face with one glassy eye reflecting a dark hallway. Deep crimson and black color palette. Vintage Victorian wallpaper peeling in the background. Text overlay: "IT'S NOT CRYING..." in distressed white font.`,
+  thumbnailPrompt: `A cracked porcelain doll face, one glassy eye reflecting a dark hallway, deep crimson and black color palette, vintage Victorian wallpaper peeling, distressed white text overlay "IT'S NOT CRYING...", dark cinematic style, dramatic low-key lighting, ominous mood, 16:9 aspect ratio`,
+  productionPlan: [
+    { scene: 1, description: 'Establish the Victorian house exterior at dusk, fog rolling in', duration: 15 },
+    { scene: 2, description: 'Mara hears the weeping, follows it to the hidden parlor room', duration: 30 },
+    { scene: 3, description: 'Close-up of the porcelain doll turning its head', duration: 20 },
+    { scene: 4, description: 'Police arrive, find Mara rocking an invisible child', duration: 25 },
+  ],
+  tags: ['#HorrorStory', '#Creepy', '#ShortStory', '#Scary', '#Horror'],
+};
+
+const FETCH_TIMEOUT = 30000;
+
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 // ===========================================================================
 //  Event listeners
 // ===========================================================================
@@ -260,6 +287,29 @@ document.addEventListener('DOMContentLoaded', () => {
   updateStyleOptions();
   switchLanguage(currentLanguage);
   checkBackendStatus();
+});
+
+// Clear loading overlay if user switches tabs (prevents stuck spinner)
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (loadingSafetyTimer) {
+      clearTimeout(loadingSafetyTimer);
+      loadingSafetyTimer = null;
+    }
+    if (!$loading.classList.contains('hidden')) {
+      setLoading(false);
+    }
+  }
+});
+
+// Global error handler — ensures spinner never stays stuck
+window.addEventListener('error', (e) => {
+  console.error('Global error:', e.error);
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('Unhandled rejection:', e.reason);
+  e.preventDefault();
 });
 
 /**
@@ -312,7 +362,7 @@ function updateDurationOptions() {
  */
 async function checkBackendStatus() {
   try {
-    const res = await fetch('/api/health');
+    const res = await fetchWithTimeout('/api/health');
     const data = await res.json();
     if (!data.apiKeyConfigured) {
       showStatus(
@@ -353,7 +403,7 @@ async function handleGenerateStory() {
 
   setLoading(true, getText('loadingStory'));
   try {
-    const res = await fetch('/api/generate/story', {
+    const res = await fetchWithTimeout('/api/generate/story', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -379,7 +429,11 @@ async function handleGenerateStory() {
       'success'
     );
   } catch (err) {
-    showStatus('Network error: could not reach the backend server. ' + err.message, 'warning');
+    if (err.name === 'AbortError') {
+      showStatus('Request timed out after 30 seconds. Please try again.', 'warning');
+    } else {
+      showStatus('Network error: could not reach the backend server. ' + err.message, 'warning');
+    }
   } finally {
     setLoading(false);
   }
@@ -399,7 +453,7 @@ async function handleGenerateYoutube() {
 
   setLoading(true, getText('loadingYoutube'));
   try {
-    const res = await fetch('/api/generate/youtube', {
+    const res = await fetchWithTimeout('/api/generate/youtube', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -427,7 +481,11 @@ async function handleGenerateYoutube() {
     renderYoutube(data);
     showStatus('YouTube metadata generated via Gemini.', 'success');
   } catch (err) {
-    showStatus('Network error: could not reach the backend server. ' + err.message, 'warning');
+    if (err.name === 'AbortError') {
+      showStatus('Request timed out after 30 seconds. Please try again.', 'warning');
+    } else {
+      showStatus('Network error: could not reach the backend server. ' + err.message, 'warning');
+    }
   } finally {
     setLoading(false);
   }
@@ -559,17 +617,34 @@ function formatDuration(length, format) {
   return format === 'shorts' ? `${length}s` : `${length} min`;
 }
 
+let loadingSafetyTimer = null;
+
 /**
  * Show/hide loading overlay and disable inputs.
+ * Includes a safety timeout to prevent infinite hanging.
  */
 function setLoading(isLoading, message) {
+  if (loadingSafetyTimer) {
+    clearTimeout(loadingSafetyTimer);
+    loadingSafetyTimer = null;
+  }
+
   $loading.classList.toggle('hidden', !isLoading);
   $generate.disabled = isLoading;
   $ytGenerate.disabled = isLoading;
   $formatToggle.style.pointerEvents = isLoading ? 'none' : 'auto';
   $length.disabled = isLoading;
+  if ($horrorStyle) $horrorStyle.disabled = isLoading;
   if (message) {
     $loadingText.textContent = message;
+  }
+
+  if (isLoading) {
+    // Safety: auto-clear loading after 45 seconds to prevent infinite spinner
+    loadingSafetyTimer = setTimeout(() => {
+      setLoading(false);
+      showStatus('Operation timed out. If this persists, refresh the page.', 'warning');
+    }, 45000);
   }
 }
 
