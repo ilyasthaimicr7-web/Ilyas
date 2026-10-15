@@ -1,0 +1,504 @@
+/* ==== Horror Studio AI — Dark Cinematic Theme ==== */
+
+:root {
+  --black: #0a0a0a;
+  --deep-red: #240000;
+  --crimson: #8b0000;
+  --blood: #a52a2a;
+  --dark-red: #5a0000;
+  --text-primary: #e0d6d6;
+  --text-secondary: #a39292;
+  --text-muted: #6b6161;
+  --border: #3d0000;
+  --glow: #1a0000;
+  --shadow: rgba(0, 0, 0, 0.6);
+}
+
+/* —  Resets & base  — */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--black);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* —  Cinematic atmosphere overlay  — */
+
+.atmosphere {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(120% 120% at 70% 30%, rgba(139, 0, 0, 0.12) 0%, transparent 50%),
+              radial-gradient(80% 80% at 20% 80%, rgba(0, 0, 0, 0.6) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 1;
+  animation: breathe 20s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.75; }
+}
+
+/* Film grain texture */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000' fill-opacity='0.03' fill-rule='nonzero'%3E%3Cpath d='M112.5 0h7.5v7.5h-7.5zm-7.5 7.5h7.5v7.5h-7.5zm125 0h7.5v7.5h-7.5zm-7.5 7.5h7.5v7.5h-7.5zm125 0h7.5v7.5h-7.5zm0-7.5h7.5v7.5h-7.5z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.4;
+}
+
+/* —  App container  — */
+
+.app-container {
+  position: relative;
+  z-index: 10;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* —  Header  — */
+
+.header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.title {
+  font-family: 'Creepster', cursive;
+  font-size: 2.5rem;
+  letter-spacing: 0.12em;
+  color: var(--crimson);
+  text-shadow: 0 0 20px var(--glow),
+               0 0 40px var(--glow),
+               0 0 60px rgba(139, 0, 0, 0.7);
+  animation: flicker 3.5s infinite;
+}
+
+@keyframes flicker {
+  0%, 19%, 21%, 25%, 53%, 55%, 100% {
+    text-shadow:
+      0 0 3px var(--glow),
+      0 0 8px var(--glow),
+      0 0 20px var(--glow),
+      0 0 40px var(--glow),
+      0 0 60px rgba(139, 0, 0, 0.7);
+    opacity: 0.95;
+  }
+  20%, 54% {
+    text-shadow: none;
+    opacity: 0.4;
+  }
+}
+
+.subtitle {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  margin-top: 6px;
+  letter-spacing: 0.05em;
+}
+
+/* —  Cards  — */
+
+.card {
+  background: linear-gradient(180deg, rgba(10, 0, 0, 0.7), rgba(5, 0, 0, 0.85));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow:
+    0 12px 40px var(--shadow),
+    inset 0 0 30px rgba(139, 0, 0, 0.1);
+  margin-bottom: 20px;
+}
+
+.card-title {
+  font-size: 1.15rem;
+  color: var(--blood);
+  letter-spacing: 0.08em;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.help-text {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+.help-text-small {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+/* —  Inputs  — */
+
+.idea-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--text-primary);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 1rem;
+  line-height: 1.5;
+  resize: vertical;
+  font-family: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  min-height: 100px;
+}
+
+.idea-input::placeholder {
+  color: var(--text-muted);
+}
+
+.idea-input:focus {
+  outline: none;
+  border-color: var(--crimson);
+  box-shadow: 0 0 0 3px rgba(139, 0, 0, 0.25);
+}
+
+/* —  Form rows  — */
+
+.form-row {
+  margin-top: 16px;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  letter-spacing: 0.05em;
+}
+
+.length-select {
+  width: 100%;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--text-primary);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  font-size: 1rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.length-select:focus {
+  outline: none;
+  border-color: var(--crimson);
+  box-shadow: 0 0 0 3px rgba(139, 0, 0, 0.25);
+}
+
+.length-select option {
+  background: var(--deep-red);
+  color: var(--text-primary);
+}
+
+/* —  Demo toggle  — */
+
+.demo-toggle-row {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+
+.switch-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.toggle-input {
+  display: none;
+}
+
+.switch-track {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 24px;
+  background: var(--deep-red);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  transition: background 0.25s ease;
+  flex-shrink: 0;
+}
+
+.switch-track::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.25s ease, background 0.2s;
+}
+
+.toggle-input:checked + .switch-track {
+  background: var(--crimson);
+}
+
+.toggle-input:checked + .switch-track::before {
+  transform: translateX(18px);
+  background: #fff;
+}
+
+.switch-text {
+  font-size: 0.82rem;
+}
+
+/* —  Buttons  — */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 10px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  padding: 12px 20px;
+  letter-spacing: 0.04em;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, var(--crimson), var(--dark-red));
+  color: #fff;
+  box-shadow: 0 6px 24px rgba(139, 0, 0, 0.4);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(180deg, var(--dark-red), var(--crimson));
+  box-shadow: 0 8px 28px rgba(139, 0, 0, 0.55);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  flex: 1;
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.btn-block {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.btn:disabled,
+.btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+/* —  Output sections  — */
+
+.story-output,
+.youtube-output {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  min-height: 160px;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+}
+
+.placeholder-text {
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+}
+
+.action-bar {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+/* YouTube metadata specific */
+.youtube-output .meta-title {
+  color: var(--blood);
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.youtube-output .meta-description {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* —  Status & footer  — */
+
+.status {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  min-height: 1.2em;
+  text-align: center;
+  padding: 8px 0;
+}
+
+.status--warning {
+  color: var(--blood);
+}
+
+.status--success {
+  color: #90ee90;
+}
+
+.footer-text {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: center;
+  margin-top: auto;
+}
+
+/* =========================================
+   Mobile Responsiveness
+   ========================================= */
+
+@media (max-width: 600px) {
+  .app-container {
+    padding: 16px 12px 36px;
+  }
+
+  .title {
+    font-size: 1.9rem;
+    letter-spacing: 0.08em;
+  }
+
+  .card {
+    padding: 16px;
+    border-radius: 12px;
+  }
+
+  .card-title {
+    font-size: 1.05rem;
+  }
+
+  .action-bar {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .btn {
+    width: 100%;
+    font-size: 1rem;
+    padding: 14px 18px;
+  }
+
+  .idea-input {
+    padding: 14px 16px;
+    font-size: 1.05rem;
+    min-height: 100px;
+  }
+
+  .length-select {
+    font-size: 1rem;
+    padding: 14px 16px;
+  }
+
+  .story-output,
+  .youtube-output {
+    padding: 14px;
+    font-size: 0.9rem;
+  }
+
+  .help-text {
+    font-size: 0.8rem;
+  }
+
+  .help-text-small {
+    font-size: 0.7rem;
+  }
+
+  .switch-text {
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-width: 400px) {
+  .title {
+    font-size: 1.6rem;
+  }
+
+  .subtitle {
+    font-size: 0.8rem;
+  }
+
+  .app-container {
+    padding: 12px 8px 32px;
+  }
+}
+
+/* —  Scrollbar (dark)  — */
+
+.story-output::-webkit-scrollbar,
+.youtube-output::-webkit-scrollbar {
+  width: 6px;
+}
+
+.story-output::-webkit-scrollbar-track,
+.youtube-output::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 3px;
+}
+
+.story-output::-webkit-scrollbar-thumb,
+.youtube-output::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}

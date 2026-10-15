@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a0a">
+  <title>Horror Studio AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="atmosphere"></div>
+
+  <div class="app-container">
+    <header class="header">
+      <h1 class="title">HORROR STUDIO AI</h1>
+      <p class="subtitle">Craft cinematic horror stories for YouTube</p>
+    </header>
+
+    <main class="main">
+      <section class="input-card card">
+        <h2 class="card-title">Story Seed</h2>
+        <p class="help-text">Describe your horror concept in a few words.</p>
+        <textarea
+          id="storyIdea"
+          class="idea-input"
+          placeholder="e.g. A child's doll that whispers the names of the dead..."
+          rows="4"
+          maxlength="500"
+        ></textarea>
+
+        <div class="form-row">
+          <label class="form-label" for="storyLength">Story Length</label>
+          <select id="storyLength" class="length-select">
+            <option value="3">3 minutes</option>
+            <option value="5" selected>5 minutes</option>
+            <option value="10">10 minutes</option>
+          </select>
+        </div>
+
+        <div class="demo-toggle-row">
+          <label class="switch-label">
+            <input type="checkbox" id="demoToggle" class="toggle-input">
+            <span class="switch-track">
+              <span class="switch-thumb"></span>
+            </span>
+            <span class="switch-text">Demo Mode (no AI service connected)</span>
+          </label>
+          <p class="help-text-small">
+            When Demo Mode is off and no AI service is connected, Generate will show a notice.
+          </p>
+        </div>
+
+        <button id="generateBtn" class="btn btn-primary btn-block">Generate Story</button>
+      </section>
+
+      <section class="output-card card">
+        <h2 class="card-title">Generated Story</h2>
+        <div id="storyOutput" class="story-output" aria-live="polite">
+          <p class="placeholder-text">Your horror story will appear here.</p>
+        </div>
+        <div class="action-bar">
+          <button id="copyStoryBtn" class="btn btn-secondary">Copy Story</button>
+          <button id="generateYoutubeBtn" class="btn btn-secondary">Generate YouTube Title & Description</button>
+        </div>
+      </section>
+
+      <section class="youtube-card card">
+        <h2 class="card-title">YouTube Metadata</h2>
+        <div id="youtubeOutput" class="youtube-output" aria-live="polite">
+          <p class="placeholder-text">YouTube title and description will appear here.</p>
+        </div>
+        <button id="copyYoutubeBtn" class="btn btn-secondary">Copy Metadata</button>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div id="status" class="status"></div>
+      <p class="footer-text">Horror Studio AI &mdash; UI Prototype v0.1</p>
+    </footer>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
