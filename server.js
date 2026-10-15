@@ -719,7 +719,7 @@ app.get('/api/video/status/:jobId', (req, res) => {
   if (!job) {
     return res.status(404).json({ error: 'Job not found.', code: 'NOT_FOUND' });
   }
-  res.json({
+  const resp = {
     jobId: job.id,
     status: job.status,
     step: job.step,
@@ -727,7 +727,14 @@ app.get('/api/video/status/:jobId', (req, res) => {
     message: job.message,
     result: job.result,
     error: job.error,
-  });
+  };
+  if (job.result) {
+    if (job.result.size) resp.size = job.result.size;
+    if (job.result.duration) resp.duration = job.result.duration;
+    if (job.result.isFallback !== undefined) resp.isFallback = job.result.isFallback;
+    if (job.result.videoUrl) resp.output = job.result.videoUrl;
+  }
+  res.json(resp);
 });
 
 app.get('/videos/:jobId/final.mp4', (req, res) => {
