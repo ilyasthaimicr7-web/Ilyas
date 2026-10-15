@@ -804,6 +804,6 @@ app.listen(PORT, () => {
   console.log('    GET  /api/video/status/:jobId');
   console.log('    GET  /api/video/health');
   console.log('    GET  /videos/:jobId/final.mp4');
-  console.log('  Video: ' + (process.env.HF_API_KEY ? 'AI images + TTS available' : 'text-only fallback mode'));
+  console.log('  Video: ' + (process.env.HF_API_KEY ? 'AI images + TTS available (HF)' : 'text-only fallback mode'));
   console.log('\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\n');
 });
