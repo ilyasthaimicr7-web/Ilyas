@@ -413,24 +413,8 @@ async function checkBackendStatus() {
         'warning'
       );
     }
-  } catch (err) {
-    showStatus(
-      'Backend server is not reachable. Demo Mode is available for UI testing.',
-      'warning'
-    );
-  }
-}
-
-// ===========================================================================
-//  Handlers
-// ===========================================================================
-
-async function handleGenerateStory() {
-  const idea = $idea.value.trim();
-  const length = parseInt($length.value, 10);
-
-  if (!idea) {
-    showStatus('Please enter a story idea before generating.', 'warning');
+  }   } catch (err) {
+    showStatus('Could not check video service status. Try again.', 'warning');
     return;
   }
 
@@ -568,22 +552,12 @@ async function handleGenerateVideo() {
     return;
   }
 
-  // Check video service health first
+  // Check video service health first (allow fallback)
   try {
     const healthRes = await fetchWithTimeout('/api/video/health');
-    const health = await healthRes.json();
-    if (!health.hfConfigured) {
-      showStatus(
-        'Video production requires a Hugging Face API key. Configure HF_API_KEY via /setup. ' +
-        'Hugging Face offers free inference for image generation and text-to-speech.',
-        'warning'
-      );
-      $videoPrereqWarn.classList.remove('hidden');
-      return;
-    }
+    await healthRes.json();
   } catch (err) {
-    showStatus('Could not check video service status. Try again.', 'warning');
-    return;
+    // Continue with fallback if health check fails
   }
 
   $videoPrereqWarn.classList.add('hidden');
