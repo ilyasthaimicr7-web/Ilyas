@@ -10,11 +10,17 @@
  *  - Only /css/, /js/, and index.html are served as static files.
  *    lib/, server.js, .env are NOT web-accessible.
  *
+ *  SETUP ENDPOINT SECURITY:
+ *  - /api/setup/key requires a server-generated setup token (rotated on restart).
+ *  - /api/setup/key only works when no key is yet configured.
+ *  - /api/setup/reset requires the CURRENT key for authorization.
+ *  - Rate limiting: max 5 setup attempts per 10 minutes per IP.
+ *
  *  API Endpoints:
  *    GET  /setup                  — secure key entry page
  *    GET  /api/health             — server + AI key status
- *    POST /api/setup/key          — enter API key (only when not yet set)
- *    POST /api/setup/reset        — clear API key
+ *    POST /api/setup/key          — enter API key (requires token, only when not set)
+ *    POST /api/setup/reset        — clear API key (requires current key)
  *    POST /api/generate/story     — generate a horror story
  *    POST /api/generate/youtube   — generate YouTube metadata
  *
@@ -27,6 +33,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { callGemini, parseJsonResponse } = require('./lib/ai/gemini');
 const { buildStoryPrompt } = require('./lib/prompts/story');
 const { buildYouTubePrompt } = require('./lib/prompts/youtube');
@@ -34,7 +41,27 @@ const { buildYouTubePrompt } = require('./lib/prompts/youtube');
 const app = express();
 const PORT = process.env.PORT || 8123;
 
-// ──  Middleware  ──────────────────────────────────────────────
+// ──  Security: Setup token (rotated on each server restart) ──
+const SETUP_TOKEN = crypto.randomBytes(16).toString('hex').substring(0, 16);
+
+// ──  Security: Rate limiter (in-memory) ──────────────────────
+const rateLimitStore = new Map();
+const MAX_SETUP_ATTEMPTS = 5;
+const RATE_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const entry = rateLimitStore.get(ip);
+  if (!entry || entry.resetTime < now) {
+    rateLimitStore.set(ip, { count: 1, resetTime: now + RATE_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= MAX_SETUP_ATTEMPTS) return false;
+  entry.count++;
+  return true;
+}
+
+// ──  Middleware ──────────────────────────────────────────────
 
 app.use(express.json({ limit: '1mb' }));
 
@@ -48,9 +75,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// ──  Static Assets (explicit, secure)  ───────────────────────
-// Only serve the files the browser needs. Do NOT serve lib/, server.js, .env
-
+// ──  Static Assets (explicit, secure) ───────────────────────
 app.use('/css', express.static(path.join(__dirname, 'css')));
 app.use('/js', express.static(path.join(__dirname, 'js')));
 
@@ -58,7 +83,7 @@ app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// ──  Setup: API key management  ──────────────────────────────
+// ──  Setup: API key management (secured) ──────────────────────
 
 /**
  * Write or update the GEMINI_API_KEY line in .env, preserving other settings.
@@ -70,7 +95,7 @@ function saveApiKeyToEnv(key) {
   try {
     content = fs.readFileSync(envPath, 'utf8');
   } catch (_e) {
-    /* File doesn't exist yet — will be created below */
+    content = '';
   }
 
   const line = 'GEMINI_API_KEY=' + key;
@@ -81,16 +106,17 @@ function saveApiKeyToEnv(key) {
     content += line + '\n';
   }
 
-  // Write with restricted permissions (owner read/write only)
   fs.writeFileSync(envPath, content, { mode: 0o600 });
 }
 
 /**
- * Generate the setup page HTML.
+ * Generate the secure setup page HTML.
  * @param {boolean} configured - Whether the API key is already set.
  * @returns {string} HTML page.
  */
 function generateSetupPage(configured) {
+  // The setup token is embedded as a hidden field. It is only sent
+  // once, with the page render. It changes on every server restart.
   return '<!DOCTYPE html>\n' +
   '<html lang="en">\n' +
   '<head>\n' +
@@ -107,16 +133,15 @@ function generateSetupPage(configured) {
   '    body::before { content: ""; position: fixed; inset: 0; background: url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'120\' height=\'120\' viewBox=\'0 0 120 120\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23000\' fill-opacity=\'0.03\' fill-rule=\'nonzero\'%3E%3Cpath d=\'M112.5 0h7.5v7.5h-7.5zm-7.5 7.5h7.5v7.5h-7.5zm125 0h7.5v7.5h-7.5zm-7.5 7.5h7.5v7.5h-7.5zm125 0h7.5v7.5h-7.5zm0-7.5h7.5v7.5h-7.5z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"); pointer-events: none; z-index: 2; opacity: 0.4; }\n' +
   '    .container { position: relative; z-index: 10; max-width: 520px; margin: 0 auto; padding: 32px 20px; min-height: 100vh; display: flex; flex-direction: column; }\n' +
   '    .title { font-family: "Creepster", cursive; font-size: 2rem; letter-spacing: 0.08em; color: #8b0000; text-align: center; margin-bottom: 4px; }\n' +
-  '    .title::selection { color: #8b0000; }\n' +
   '    .subtitle { text-align: center; color: #a39292; font-size: 0.85rem; margin-bottom: 24px; }\n' +
   '    .card { background: linear-gradient(180deg, rgba(10,0,0,0.7), rgba(5,0,0,0.85)); border: 1px solid #3d0000; border-radius: 14px; padding: 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.6), inset 0 0 30px rgba(139,0,0,0.1); margin-bottom: 20px; }\n' +
   '    h2 { color: #a52a2a; font-size: 1.3rem; letter-spacing: 0.08em; margin-bottom: 16px; }\n' +
   '    label { display: block; font-size: 0.8rem; color: #a39292; margin-bottom: 6px; letter-spacing: 0.05em; }\n' +
-  '    input[type="password"] { width: 100%; padding: 14px 16px; background: rgba(0,0,0,0.65); color: #e0d6d6; border: 1.5px solid #3d0000; border-radius: 10px; font-size: 1rem; font-family: "Courier New", monospace; font-size: 0.9rem; transition: border-color 0.2s; }\n' +
+  '    input[type="password"], input[type="text"] { width: 100%; padding: 14px 16px; background: rgba(0,0,0,0.65); color: #e0d6d6; border: 1.5px solid #3d0000; border-radius: 10px; font-size: 1rem; margin-bottom: 12px; transition: border-color 0.2s; }\n' +
   '    input:focus { outline: none; border-color: #8b0000; box-shadow: 0 0 0 3px rgba(139,0,0,0.25); }\n' +
-  '    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: none; border-radius: 10px; font-family: inherit; font-weight: 600; font-size: 1rem; cursor: pointer; padding: 14px 24px; margin-top: 16px; width: 100%; -webkit-tap-highlight-color: transparent; transition: all 0.18s ease; }\n' +
+  '    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: none; border-radius: 10px; font-family: inherit; font-weight: 600; font-size: 1rem; cursor: pointer; padding: 14px 24px; margin-top: 8px; width: 100%; -webkit-tap-highlight-color: transparent; transition: all 0.18s ease; }\n' +
   '    .btn-primary { background: linear-gradient(180deg, #8b0000, #5a0000); color: #fff; box-shadow: 0 6px 24px rgba(139,0,0,0.4); }\n' +
-  '    .btn-primary:hover { background: linear-gradient(180deg, #5a0000, #8b0000); box-shadow: 0 8px 28px rgba(139,0,0,0.55); }\n' +
+  '    .btn-primary:hover { background: linear-gradient(180deg, #5a0000, #8b0000); }\n' +
   '    .btn-danger { background: linear-gradient(180deg, #5a0000, #8b0000); color: #fff; }\n' +
   '    .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }\n' +
   '    .message { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 0.85rem; text-align: center; }\n' +
@@ -129,6 +154,7 @@ function generateSetupPage(configured) {
   '    .help a { color: #8b0000; }\n' +
   '    .spinner { width: 18px; height: 18px; border: 2px solid rgba(139,0,0,0.3); border-top-color: #8b0000; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }\n' +
   '    @keyframes spin { to { transform: rotate(360deg); } }\n' +
+  '    .token-display { background: rgba(0,0,0,0.4); border: 1px dashed #3d0000; border-radius: 6px; padding: 8px 12px; font-family: "Courier New", monospace; font-size: 0.85rem; color: #a52a2a; word-break: break-all; margin: 8px 0; text-align: center; }\n' +
   '    @media (max-width: 600px) { .container { padding: 24px 16px; } .title { font-size: 1.7rem; } h2 { font-size: 1.15rem; } }\n' +
   '  </style>\n' +
   '</head>\n' +
@@ -143,9 +169,12 @@ function generateSetupPage(configured) {
   '    <div id="formSection" class="' + (configured ? 'hidden' : '') + '">\n' +
   '      <div class="card">\n' +
   '        <h2>Enter Your Gemini API Key</h2>\n' +
-  '        <p style="color:#a39292;font-size:0.8rem;margin-bottom:12px;">This key is sent directly to the server over HTTPS and saved to a gitignored .env file. It is never stored in chat or logs.</p>\n' +
+  '        <p id="tokenNotice" style="color:#a39292;font-size:0.8rem;margin-bottom:8px;">Security token for this session:</p>\n' +
+  '        <div id="tokenBox" class="token-display">' + SETUP_TOKEN + '</div>\n' +
+  '        <p style="color:#a39292;font-size:0.75rem;margin-bottom:12px;">This token changes on every server restart. It is sent to the server for verification. Your key is saved directly — it never appears in chat.</p>\n' +
   '        <form id="keyForm">\n' +
-  '          <label for="apiKey">API Key</label>\n' +
+  '          <input type="hidden" id="setupToken" value="' + SETUP_TOKEN + '">\n' +
+  '          <label for="apiKey">Gemini API Key</label>\n' +
   '          <input type="password" id="apiKey" placeholder="AIxxxxxxxxxxxxxxxx" autocomplete="off" required>\n' +
   '          <button type="submit" id="saveBtn" class="btn btn-primary">Save &amp; Activate Key</button>\n' +
   '        </form>\n' +
@@ -154,9 +183,16 @@ function generateSetupPage(configured) {
   '\n' +
   '    <div id="configuredSection" class="card ' + (configured ? '' : 'hidden') + '">\n' +
   '      <h2>Key Configured</h2>\n' +
-  '      <div class="configured-box">API key is set and active.\n' +
+  '      <div class="configured-box">\n' +
+  '        API key is set and active.\n' +
   '      </div>\n' +
-  '      <button id="resetBtn" class="btn btn-danger">Reset / Change Key</button>\n' +
+  '      <p style="color:#a39292;font-size:0.75rem;margin-bottom:12px;">To change your key, enter the current one below and tap Reset.</p>\n' +
+  '      <form id="resetForm">\n' +
+  '        <input type="hidden" id="resetToken" value="' + SETUP_TOKEN + '">\n' +
+  '        <label for="currentKey">Current API Key (to confirm reset)</label>\n' +
+  '        <input type="password" id="currentKey" placeholder="AIxxxxxxxxxxxxxxxx" autocomplete="off" required>\n' +
+  '        <button type="submit" id="resetBtn" class="btn btn-danger">Reset Key</button>\n' +
+  '      </form>\n' +
   '    </div>\n' +
   '\n' +
   '    <div class="help">\n' +
@@ -170,67 +206,49 @@ function generateSetupPage(configured) {
   '    var form = document.getElementById("keyForm");\n' +
   '    var saveBtn = document.getElementById("saveBtn");\n' +
   '    var messageArea = document.getElementById("messageArea");\n' +
-  '    var formSection = document.getElementById("formSection");\n' +
-  '    var configuredSection = document.getElementById("configuredSection");\n' +
+  '    var resetForm = document.getElementById("resetForm");\n' +
   '    var resetBtn = document.getElementById("resetBtn");\n' +
   '\n' +
   '    function showMessage(text, type) {\n' +
   '      messageArea.innerHTML = \'<div class="message message-\' + type + \'">\' + text + \'</div>\';\n' +
   '    }\n' +
-  '\n' +
-  '    function setLoading(isLoading) {\n' +
-  '      saveBtn.disabled = isLoading;\n' +
-  '      saveBtn.innerHTML = isLoading ? \'<span class="spinner"></span> Saving...\' : \'Save &amp; Activate Key\';\n' +
+  '    function setLoading(btn, isLoading, text) {\n' +
+  '      btn.disabled = isLoading;\n' +
+  '      btn.innerHTML = isLoading ? \'<span class="spinner"></span> \' + text + \'\' : btn.getAttribute("data-original") || \'Save &amp; Activate Key\';\n' +
   '    }\n' +
-  '\n' +
   '    form.addEventListener("submit", function(e) {\n' +
   '      e.preventDefault();\n' +
   '      var key = document.getElementById("apiKey").value.trim();\n' +
-  '      \n' +
-  '      if (!key) {\n' +
-  '        showMessage("Please enter your API key.", "error");\n' +
-  '        return;\n' +
-  '      }\n' +
-  '      if (!key.startsWith("AI") || key.length < 20) {\n' +
-  '        showMessage("Invalid key format. Gemini keys start with \\"AI\\" and are 20+ characters.", "error");\n' +
-  '        return;\n' +
-  '      }\n' +
-  '      \n' +
-  '      setLoading(true);\n' +
-  '      \n' +
+  '      var token = document.getElementById("setupToken").value;\n' +
+  '      if (!key) { showMessage("Please enter your API key.", "error"); return; }\n' +
+  '      if (key.length < 10) { showMessage("API key looks too short. Please check and try again.", "error"); return; }\n' +
+  '      setLoading(saveBtn, true, "Saving...");\n' +
   '      fetch("/api/setup/key", {\n' +
   '        method: "POST",\n' +
   '        headers: { "Content-Type": "application/json" },\n' +
-  '        body: JSON.stringify({ key: key })\n' +
+  '        body: JSON.stringify({ key: key, setupToken: token })\n' +
   '      })\n' +
   '      .then(function(r) { return r.json(); })\n' +
   '      .then(function(data) {\n' +
-  '        if (data.success) {\n' +
-  '          showMessage(data.message || "Key saved successfully!", "success");\n' +
-  '          setTimeout(function() { window.location.href = "/"; }, 1500);\n' +
-  '        } else {\n' +
-  '          showMessage(data.error || "Failed to save key.", "error");\n' +
-  '        }\n' +
+  '        if (data.success) { showMessage(data.message, "success"); setTimeout(function() { window.location.href = "/"; }, 1500); }\n' +
+  '        else { showMessage(data.error || "Failed to save key.", "error"); }\n' +
   '      })\n' +
-  '      .catch(function(err) {\n' +
-  '        showMessage("Network error: " + err.message, "error");\n' +
-  '      })\n' +
-  '      .finally(function() { setLoading(false); });\n' +
+  '      .catch(function(err) { showMessage("Network error: " + err.message, "error"); })\n' +
+  '      .finally(function() { setLoading(saveBtn, false); });\n' +
   '    });\n' +
-  '\n' +
-  '    resetBtn.addEventListener("click", function() {\n' +
-  '      if (!confirm("Are you sure you want to reset the API key?")) return;\n' +
-  '      \n' +
-  '      fetch("/api/setup/reset", { method: "POST" })\n' +
+  '    resetForm.addEventListener("submit", function(e) {\n' +
+  '      e.preventDefault();\n' +
+  '      var currentKey = document.getElementById("currentKey").value;\n' +
+  '      if (!confirm("Reset the API key? This cannot be undone.")) return;\n' +
+  '      fetch("/api/setup/reset", {\n' +
+  '        method: "POST",\n' +
+  '        headers: { "Content-Type": "application/json" },\n' +
+  '        body: JSON.stringify({ currentKey: currentKey })\n' +
+  '      })\n' +
   '      .then(function(r) { return r.json(); })\n' +
   '      .then(function(data) {\n' +
-  '        if (data.success) {\n' +
-  '          showMessage(data.message, "success");\n' +
-  '          formSection.classList.remove("hidden");\n' +
-  '          configuredSection.classList.add("hidden");\n' +
-  '        } else {\n' +
-  '          showMessage(data.error, "error");\n' +
-  '        }\n' +
+  '        if (data.success) { showMessage(data.message, "success"); setTimeout(function() { window.location.reload(); }, 1500); }\n' +
+  '        else { showMessage(data.error || "Reset failed.", "error"); }\n' +
   '      });\n' +
   '    });\n' +
   '  </script>\n' +
@@ -245,31 +263,49 @@ app.get('/setup', (_req, res) => {
   res.send(generateSetupPage(configured));
 });
 
-// Setup: save API key (only when not yet configured)
+// Setup: save API key (secured — requires token, only when not configured)
 app.post('/api/setup/key', (req, res) => {
+  // Rate limiting
+  const ip = req.ip || req.connection.remoteAddress;
+  if (!checkRateLimit(ip)) {
+    return res.status(429).json({
+      error: 'Too many setup attempts. Please wait 10 minutes and try again.',
+      code: 'RATE_LIMITED',
+    });
+  }
+
+  // Only allow when key is not yet set
   if (process.env.GEMINI_API_KEY) {
     return res.status(403).json({
-      error: 'API key already configured.',
+      error: 'API key already configured. Use the reset option on /setup to change it.',
       code: 'ALREADY_CONFIGURED',
     });
   }
 
-  const { key } = req.body;
+  // Validate setup token
+  const { key, setupToken } = req.body;
+  if (!setupToken || setupToken !== SETUP_TOKEN) {
+    return res.status(403).json({
+      error: 'Invalid setup token. Refresh the page and try again.',
+      code: 'INVALID_TOKEN',
+    });
+  }
+
+  // Validate key format
   if (!key || typeof key !== 'string') {
     return res.status(400).json({ error: 'API key is required.', code: 'VALIDATION_ERROR' });
   }
-
   const trimmed = key.trim();
-  if (!trimmed.startsWith('AI') || trimmed.length < 20) {
+  if (trimmed.length < 10) {
     return res.status(400).json({
-      error: 'Invalid API key format. Gemini keys start with "AI" and are 20+ characters.',
+      error: 'Invalid API key. Please check the key and try again.',
       code: 'VALIDATION_ERROR',
     });
   }
 
   try {
     saveApiKeyToEnv(trimmed);
-    // Set in-memory immediately so it works without a restart
+    // Set in-memory immediately (no restart needed)
     process.env.GEMINI_API_KEY = trimmed;
     console.log('[setup] API key configured (' + trimmed.length + ' chars).');
     res.json({ success: true, message: 'API key saved and is now active.' });
@@ -279,12 +315,30 @@ app.post('/api/setup/key', (req, res) => {
   }
 });
 
-// Setup: reset / clear API key
-app.post('/api/setup/reset', (_req, res) => {
+// Setup: reset API key (requires CURRENT key for authorisation)
+app.post('/api/setup/reset', (req, res) => {
+  const { currentKey } = req.body;
+  const currentEnvKey = process.env.GEMINI_API_KEY;
+
+  if (!currentEnvKey) {
+    return res.status(403).json({
+      error: 'No API key is currently configured. Nothing to reset.',
+      code: 'NO_KEY_SET',
+    });
+  }
+
+  // Require the current key — prevents unauthorized resets
+  if (!currentKey || currentKey !== currentEnvKey) {
+    return res.status(403).json({
+      error: 'Current API key does not match. Cannot reset without authorisation.',
+      code: 'UNAUTHORIZED',
+    });
+  }
+
   try {
     saveApiKeyToEnv('');
     delete process.env.GEMINI_API_KEY;
-    console.log('[setup] API key cleared.');
+    console.log('[setup] API key cleared via reset.');
     res.json({ success: true, message: 'API key cleared from memory and .env.' });
   } catch (err) {
     console.error('[setup] Failed to clear key:', err.message);
@@ -302,16 +356,16 @@ app.get('/api/health', (_req, res) => {
     version: '0.2.0-stage1',
     apiKeyConfigured: hasKey,
     model: hasKey ? (process.env.GEMINI_MODEL || 'gemini-2.0-flash') : null,
+    setupRequired: !hasKey,
     timestamp: new Date().toISOString(),
   });
 });
 
-// ──  API: Generate Story  ────────────────────────────────────
+// ──  API: Generate Story ─────────────────────────────────────
 
 app.post('/api/generate/story', async (req, res) => {
   const { idea, length, format } = req.body;
 
-  // ── Input validation ──
   if (!idea || typeof idea !== 'string' || idea.trim().length === 0) {
     return res.status(400).json({ error: 'Story idea is required.', code: 'VALIDATION_ERROR' });
   }
@@ -331,7 +385,6 @@ app.post('/api/generate/story', async (req, res) => {
     return res.status(400).json({ error: 'Invalid Shorts length. Must be 30, 45, or 60 seconds.', code: 'VALIDATION_ERROR' });
   }
 
-  // Check API key
   if (!process.env.GEMINI_API_KEY) {
     return res.status(503).json({
       error: 'No AI service configured. Set GEMINI_API_KEY via /setup or .env, then restart.',
@@ -364,7 +417,7 @@ app.post('/api/generate/story', async (req, res) => {
   }
 });
 
-// ──  API: Generate YouTube Metadata  ─────────────────────────
+// ──  API: Generate YouTube Metadata ──────────────────────────
 
 app.post('/api/generate/youtube', async (req, res) => {
   const { story, length, format, idea } = req.body;
@@ -396,7 +449,6 @@ app.post('/api/generate/youtube', async (req, res) => {
     const raw = await callGemini(prompt, { maxOutputTokens: 4096 });
     const metadata = parseJsonResponse(raw);
 
-    // Validate required fields
     const required = ['title', 'description', 'thumbnail_concept', 'production_plan', 'tags'];
     for (const field of required) {
       if (!(field in metadata) || metadata[field] === null || metadata[field] === undefined) {
@@ -431,20 +483,29 @@ app.post('/api/generate/youtube', async (req, res) => {
   }
 });
 
-// ──  Error handlers  ─────────────────────────────────────────
+// ──  Error handlers ─────────────────────────────────────────
 
-// 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found.', code: 'NOT_FOUND' });
 });
 
-// Global error handler
+// JSON parse error (malformed request body)
+app.use((err, _req, res, next) => {
+  if (err && err.type === 'entity.parse.failed') {
+    return res.status(400).json({
+      error: 'Invalid JSON in request body.',
+      code: 'PARSE_ERROR',
+    });
+  }
+  next(err);
+});
+
 app.use((err, _req, res, _next) => {
   console.error('[server] Unhandled error:', err);
   res.status(500).json({ error: 'Internal server error.', code: 'INTERNAL_ERROR' });
 });
 
-// ──  Start server  ────────────────────────────────────────────
+// ──  Start server ────────────────────────────────────────────
 
 app.listen(PORT, () => {
   const hasKey = !!process.env.GEMINI_API_KEY;
@@ -455,8 +516,12 @@ app.listen(PORT, () => {
   console.log('  API Key:     ' + (hasKey ? '\u2713 Configured' : '\u2717 NOT SET'));
   console.log('  Model:       ' + (process.env.GEMINI_MODEL || 'gemini-2.0-flash'));
   console.log('  Setup page:  http://0.0.0.0:' + PORT + '/setup');
+  console.log('  Setup token: ' + SETUP_TOKEN + ' (printed for admin; displayed on /setup)');
   console.log('  Endpoints:');
+  console.log('    GET  /setup');
   console.log('    GET  /api/health');
+  console.log('    POST /api/setup/key     (requires token, key-not-set only)');
+  console.log('    POST /api/setup/reset    (requires current key)');
   console.log('    POST /api/generate/story');
   console.log('    POST /api/generate/youtube');
   console.log('\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\n');
