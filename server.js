@@ -1,0 +1,463 @@
+/*  Horror Studio AI — Express Backend Server
+ *
+ *  Serves the static frontend and provides secure API endpoints
+ *  that proxy requests to Google's Gemini API.
+ *
+ *  SECURITY:
+ *  - The Gemini API key is read from process.env.GEMINI_API_KEY.
+ *  - It is loaded from .env at startup OR entered via the /setup page.
+ *  - The key is NEVER sent to the browser frontend (js/app.js).
+ *  - Only /css/, /js/, and index.html are served as static files.
+ *    lib/, server.js, .env are NOT web-accessible.
+ *
+ *  API Endpoints:
+ *    GET  /setup                  — secure key entry page
+ *    GET  /api/health             — server + AI key status
+ *    POST /api/setup/key          — enter API key (only when not yet set)
+ *    POST /api/setup/reset        — clear API key
+ *    POST /api/generate/story     — generate a horror story
+ *    POST /api/generate/youtube   — generate YouTube metadata
+ *
+ *  Run:
+ *    npm install
+ *    npm start
+ */
+
+require('dotenv').config();
+const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const { callGemini, parseJsonResponse } = require('./lib/ai/gemini');
+const { buildStoryPrompt } = require('./lib/prompts/story');
+const { buildYouTubePrompt } = require('./lib/prompts/youtube');
+
+const app = express();
+const PORT = process.env.PORT || 8123;
+
+// ──  Middleware  ──────────────────────────────────────────────
+
+app.use(express.json({ limit: '1mb' }));
+
+// Request logger — never logs request bodies or API keys.
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    console.log('[' + new Date().toISOString() + '] ' + req.method + ' ' + req.path + ' -> ' + res.statusCode + ' (' + ms + 'ms)');
+  });
+  next();
+});
+
+// ──  Static Assets (explicit, secure)  ───────────────────────
+// Only serve the files the browser needs. Do NOT serve lib/, server.js, .env
+
+app.use('/css', express.static(path.join(__dirname, 'css')));
+app.use('/js', express.static(path.join(__dirname, 'js')));
+
+app.get('/', (_req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// ──  Setup: API key management  ──────────────────────────────
+
+/**
+ * Write or update the GEMINI_API_KEY line in .env, preserving other settings.
+ * @param {string} key - The API key to save (empty string to clear).
+ */
+function saveApiKeyToEnv(key) {
+  const envPath = path.join(__dirname, '.env');
+  let content = '';
+  try {
+    content = fs.readFileSync(envPath, 'utf8');
+  } catch (_e) {
+    /* File doesn't exist yet — will be created below */
+  }
+
+  const line = 'GEMINI_API_KEY=' + key;
+  if (/^GEMINI_API_KEY=/m.test(content)) {
+    content = content.replace(/^GEMINI_API_KEY=.*$/m, line);
+  } else {
+    if (content && !content.endsWith('\n')) content += '\n';
+    content += line + '\n';
+  }
+
+  // Write with restricted permissions (owner read/write only)
+  fs.writeFileSync(envPath, content, { mode: 0o600 });
+}
+
+/**
+ * Generate the setup page HTML.
+ * @param {boolean} configured - Whether the API key is already set.
+ * @returns {string} HTML page.
+ */
+function generateSetupPage(configured) {
+  return '<!DOCTYPE html>\n' +
+  '<html lang="en">\n' +
+  '<head>\n' +
+  '  <meta charset="UTF-8">\n' +
+  '  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">\n' +
+  '  <meta name="theme-color" content="#0a0a0a">\n' +
+  '  <title>Horror Studio AI — Setup</title>\n' +
+  '  <link rel="preconnect" href="https://fonts.googleapis.com">\n' +
+  '  <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">\n' +
+  '  <style>\n' +
+  '    * { margin: 0; padding: 0; box-sizing: border-box; }\n' +
+  '    body { font-family: "Inter", sans-serif; background: #0a0a0a; color: #e0d6d6; min-height: 100vh; overflow-x: hidden; position: relative; }\n' +
+  '    .atmosphere { position: fixed; inset: 0; background: radial-gradient(120% 120% at 70% 30%, rgba(139,0,0,0.12) 0%, transparent 50%), radial-gradient(80% 80% at 20% 80%, rgba(0,0,0,0.6) 0%, transparent 50%); pointer-events: none; z-index: 1; }\n' +
+  '    body::before { content: ""; position: fixed; inset: 0; background: url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'120\' height=\'120\' viewBox=\'0 0 120 120\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23000\' fill-opacity=\'0.03\' fill-rule=\'nonzero\'%3E%3Cpath d=\'M112.5 0h7.5v7.5h-7.5zm-7.5 7.5h7.5v7.5h-7.5zm125 0h7.5v7.5h-7.5zm-7.5 7.5h7.5v7.5h-7.5zm125 0h7.5v7.5h-7.5zm0-7.5h7.5v7.5h-7.5z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"); pointer-events: none; z-index: 2; opacity: 0.4; }\n' +
+  '    .container { position: relative; z-index: 10; max-width: 520px; margin: 0 auto; padding: 32px 20px; min-height: 100vh; display: flex; flex-direction: column; }\n' +
+  '    .title { font-family: "Creepster", cursive; font-size: 2rem; letter-spacing: 0.08em; color: #8b0000; text-align: center; margin-bottom: 4px; }\n' +
+  '    .title::selection { color: #8b0000; }\n' +
+  '    .subtitle { text-align: center; color: #a39292; font-size: 0.85rem; margin-bottom: 24px; }\n' +
+  '    .card { background: linear-gradient(180deg, rgba(10,0,0,0.7), rgba(5,0,0,0.85)); border: 1px solid #3d0000; border-radius: 14px; padding: 24px; box-shadow: 0 12px 40px rgba(0,0,0,0.6), inset 0 0 30px rgba(139,0,0,0.1); margin-bottom: 20px; }\n' +
+  '    h2 { color: #a52a2a; font-size: 1.3rem; letter-spacing: 0.08em; margin-bottom: 16px; }\n' +
+  '    label { display: block; font-size: 0.8rem; color: #a39292; margin-bottom: 6px; letter-spacing: 0.05em; }\n' +
+  '    input[type="password"] { width: 100%; padding: 14px 16px; background: rgba(0,0,0,0.65); color: #e0d6d6; border: 1.5px solid #3d0000; border-radius: 10px; font-size: 1rem; font-family: "Courier New", monospace; font-size: 0.9rem; transition: border-color 0.2s; }\n' +
+  '    input:focus { outline: none; border-color: #8b0000; box-shadow: 0 0 0 3px rgba(139,0,0,0.25); }\n' +
+  '    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: none; border-radius: 10px; font-family: inherit; font-weight: 600; font-size: 1rem; cursor: pointer; padding: 14px 24px; margin-top: 16px; width: 100%; -webkit-tap-highlight-color: transparent; transition: all 0.18s ease; }\n' +
+  '    .btn-primary { background: linear-gradient(180deg, #8b0000, #5a0000); color: #fff; box-shadow: 0 6px 24px rgba(139,0,0,0.4); }\n' +
+  '    .btn-primary:hover { background: linear-gradient(180deg, #5a0000, #8b0000); box-shadow: 0 8px 28px rgba(139,0,0,0.55); }\n' +
+  '    .btn-danger { background: linear-gradient(180deg, #5a0000, #8b0000); color: #fff; }\n' +
+  '    .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }\n' +
+  '    .message { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 0.85rem; text-align: center; }\n' +
+  '    .message-success { background: rgba(0,144,0,0.15); border: 1px solid #009000; color: #90ee90; }\n' +
+  '    .message-error { background: rgba(139,0,0,0.15); border: 1px solid #8b0000; color: #a52a2a; }\n' +
+  '    .message-info { background: rgba(255,255,255,0.05); border: 1px solid #3d0000; color: #a39292; }\n' +
+  '    .hidden { display: none !important; }\n' +
+  '    .configured-box { text-align: center; padding: 12px; color: #90ee90; border: 1px solid #009000; border-radius: 8px; margin-bottom: 16px; }\n' +
+  '    .help { text-align: center; color: #a39292; font-size: 0.8rem; margin-top: 12px; line-height: 1.5; }\n' +
+  '    .help a { color: #8b0000; }\n' +
+  '    .spinner { width: 18px; height: 18px; border: 2px solid rgba(139,0,0,0.3); border-top-color: #8b0000; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }\n' +
+  '    @keyframes spin { to { transform: rotate(360deg); } }\n' +
+  '    @media (max-width: 600px) { .container { padding: 24px 16px; } .title { font-size: 1.7rem; } h2 { font-size: 1.15rem; } }\n' +
+  '  </style>\n' +
+  '</head>\n' +
+  '<body>\n' +
+  '  <div class="atmosphere"></div>\n' +
+  '  <div class="container">\n' +
+  '    <h1 class="title">HORROR STUDIO AI</h1>\n' +
+  '    <p class="subtitle">Secure API Key Setup</p>\n' +
+  '\n' +
+  '    <div id="messageArea"></div>\n' +
+  '\n' +
+  '    <div id="formSection" class="' + (configured ? 'hidden' : '') + '">\n' +
+  '      <div class="card">\n' +
+  '        <h2>Enter Your Gemini API Key</h2>\n' +
+  '        <p style="color:#a39292;font-size:0.8rem;margin-bottom:12px;">This key is sent directly to the server over HTTPS and saved to a gitignored .env file. It is never stored in chat or logs.</p>\n' +
+  '        <form id="keyForm">\n' +
+  '          <label for="apiKey">API Key</label>\n' +
+  '          <input type="password" id="apiKey" placeholder="AIxxxxxxxxxxxxxxxx" autocomplete="off" required>\n' +
+  '          <button type="submit" id="saveBtn" class="btn btn-primary">Save &amp; Activate Key</button>\n' +
+  '        </form>\n' +
+  '      </div>\n' +
+  '    </div>\n' +
+  '\n' +
+  '    <div id="configuredSection" class="card ' + (configured ? '' : 'hidden') + '">\n' +
+  '      <h2>Key Configured</h2>\n' +
+  '      <div class="configured-box">API key is set and active.\n' +
+  '      </div>\n' +
+  '      <button id="resetBtn" class="btn btn-danger">Reset / Change Key</button>\n' +
+  '    </div>\n' +
+  '\n' +
+  '    <div class="help">\n' +
+  '      Get your free key at\n' +
+  '      <a href="https://aistudio.google.com/apikey" target="_blank">aistudio.google.com/apikey</a><br>\n' +
+  '      Free tier: ~1,500 requests/day, no credit card required.\n' +
+  '    </div>\n' +
+  '  </div>\n' +
+  '\n' +
+  '  <script>\n' +
+  '    var form = document.getElementById("keyForm");\n' +
+  '    var saveBtn = document.getElementById("saveBtn");\n' +
+  '    var messageArea = document.getElementById("messageArea");\n' +
+  '    var formSection = document.getElementById("formSection");\n' +
+  '    var configuredSection = document.getElementById("configuredSection");\n' +
+  '    var resetBtn = document.getElementById("resetBtn");\n' +
+  '\n' +
+  '    function showMessage(text, type) {\n' +
+  '      messageArea.innerHTML = \'<div class="message message-\' + type + \'">\' + text + \'</div>\';\n' +
+  '    }\n' +
+  '\n' +
+  '    function setLoading(isLoading) {\n' +
+  '      saveBtn.disabled = isLoading;\n' +
+  '      saveBtn.innerHTML = isLoading ? \'<span class="spinner"></span> Saving...\' : \'Save &amp; Activate Key\';\n' +
+  '    }\n' +
+  '\n' +
+  '    form.addEventListener("submit", function(e) {\n' +
+  '      e.preventDefault();\n' +
+  '      var key = document.getElementById("apiKey").value.trim();\n' +
+  '      \n' +
+  '      if (!key) {\n' +
+  '        showMessage("Please enter your API key.", "error");\n' +
+  '        return;\n' +
+  '      }\n' +
+  '      if (!key.startsWith("AI") || key.length < 20) {\n' +
+  '        showMessage("Invalid key format. Gemini keys start with \\"AI\\" and are 20+ characters.", "error");\n' +
+  '        return;\n' +
+  '      }\n' +
+  '      \n' +
+  '      setLoading(true);\n' +
+  '      \n' +
+  '      fetch("/api/setup/key", {\n' +
+  '        method: "POST",\n' +
+  '        headers: { "Content-Type": "application/json" },\n' +
+  '        body: JSON.stringify({ key: key })\n' +
+  '      })\n' +
+  '      .then(function(r) { return r.json(); })\n' +
+  '      .then(function(data) {\n' +
+  '        if (data.success) {\n' +
+  '          showMessage(data.message || "Key saved successfully!", "success");\n' +
+  '          setTimeout(function() { window.location.href = "/"; }, 1500);\n' +
+  '        } else {\n' +
+  '          showMessage(data.error || "Failed to save key.", "error");\n' +
+  '        }\n' +
+  '      })\n' +
+  '      .catch(function(err) {\n' +
+  '        showMessage("Network error: " + err.message, "error");\n' +
+  '      })\n' +
+  '      .finally(function() { setLoading(false); });\n' +
+  '    });\n' +
+  '\n' +
+  '    resetBtn.addEventListener("click", function() {\n' +
+  '      if (!confirm("Are you sure you want to reset the API key?")) return;\n' +
+  '      \n' +
+  '      fetch("/api/setup/reset", { method: "POST" })\n' +
+  '      .then(function(r) { return r.json(); })\n' +
+  '      .then(function(data) {\n' +
+  '        if (data.success) {\n' +
+  '          showMessage(data.message, "success");\n' +
+  '          formSection.classList.remove("hidden");\n' +
+  '          configuredSection.classList.add("hidden");\n' +
+  '        } else {\n' +
+  '          showMessage(data.error, "error");\n' +
+  '        }\n' +
+  '      });\n' +
+  '    });\n' +
+  '  </script>\n' +
+  '</body>\n' +
+  '</html>';
+}
+
+// Serve setup page
+app.get('/setup', (_req, res) => {
+  const configured = !!process.env.GEMINI_API_KEY;
+  res.set('Content-Type', 'text/html');
+  res.send(generateSetupPage(configured));
+});
+
+// Setup: save API key (only when not yet configured)
+app.post('/api/setup/key', (req, res) => {
+  if (process.env.GEMINI_API_KEY) {
+    return res.status(403).json({
+      error: 'API key already configured.',
+      code: 'ALREADY_CONFIGURED',
+    });
+  }
+
+  const { key } = req.body;
+  if (!key || typeof key !== 'string') {
+    return res.status(400).json({ error: 'API key is required.', code: 'VALIDATION_ERROR' });
+  }
+
+  const trimmed = key.trim();
+  if (!trimmed.startsWith('AI') || trimmed.length < 20) {
+    return res.status(400).json({
+      error: 'Invalid API key format. Gemini keys start with "AI" and are 20+ characters.',
+      code: 'VALIDATION_ERROR',
+    });
+  }
+
+  try {
+    saveApiKeyToEnv(trimmed);
+    // Set in-memory immediately so it works without a restart
+    process.env.GEMINI_API_KEY = trimmed;
+    console.log('[setup] API key configured (' + trimmed.length + ' chars).');
+    res.json({ success: true, message: 'API key saved and is now active.' });
+  } catch (err) {
+    console.error('[setup] Failed to save key:', err.message);
+    res.status(500).json({ error: 'Failed to save API key to disk.', code: 'FS_ERROR' });
+  }
+});
+
+// Setup: reset / clear API key
+app.post('/api/setup/reset', (_req, res) => {
+  try {
+    saveApiKeyToEnv('');
+    delete process.env.GEMINI_API_KEY;
+    console.log('[setup] API key cleared.');
+    res.json({ success: true, message: 'API key cleared from memory and .env.' });
+  } catch (err) {
+    console.error('[setup] Failed to clear key:', err.message);
+    res.status(500).json({ error: 'Failed to clear API key.', code: 'FS_ERROR' });
+  }
+});
+
+// ──  Health ──────────────────────────────────────────────────
+
+app.get('/api/health', (_req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const hasKey = !!apiKey;
+  res.json({
+    status: 'ok',
+    version: '0.2.0-stage1',
+    apiKeyConfigured: hasKey,
+    model: hasKey ? (process.env.GEMINI_MODEL || 'gemini-2.0-flash') : null,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// ──  API: Generate Story  ────────────────────────────────────
+
+app.post('/api/generate/story', async (req, res) => {
+  const { idea, length, format } = req.body;
+
+  // ── Input validation ──
+  if (!idea || typeof idea !== 'string' || idea.trim().length === 0) {
+    return res.status(400).json({ error: 'Story idea is required.', code: 'VALIDATION_ERROR' });
+  }
+  if (idea.length > 1000) {
+    return res.status(400).json({ error: 'Story idea is too long (max 1000 characters).', code: 'VALIDATION_ERROR' });
+  }
+
+  const formatType = format === 'shorts' ? 'shorts' : 'video';
+  const duration = formatType === 'shorts'
+    ? parseInt(length, 10) || 60
+    : parseInt(length, 10) || 5;
+
+  if (formatType === 'video' && ![3, 5, 10].includes(duration)) {
+    return res.status(400).json({ error: 'Invalid video length. Must be 3, 5, or 10 minutes.', code: 'VALIDATION_ERROR' });
+  }
+  if (formatType === 'shorts' && ![30, 45, 60].includes(duration)) {
+    return res.status(400).json({ error: 'Invalid Shorts length. Must be 30, 45, or 60 seconds.', code: 'VALIDATION_ERROR' });
+  }
+
+  // Check API key
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(503).json({
+      error: 'No AI service configured. Set GEMINI_API_KEY via /setup or .env, then restart.',
+      code: 'NO_API_KEY',
+    });
+  }
+
+  try {
+    const prompt = buildStoryPrompt(idea, duration, formatType);
+    console.log('[story] Generating "' + idea + '" (' + formatType + ', ' + duration + ')...');
+
+    const story = await callGemini(prompt, { maxOutputTokens: 4096 });
+
+    const wordCount = story.split(/\s+/).filter(Boolean).length;
+
+    res.json({
+      story,
+      wordCount,
+      format: formatType,
+      length: duration,
+      idea: idea.trim(),
+    });
+  } catch (err) {
+    console.error('[story] Error:', err.code, err.message);
+    const status = err.status || 500;
+    res.status(status).json({
+      error: err.userMessage || err.message,
+      code: err.code || 'API_ERROR',
+    });
+  }
+});
+
+// ──  API: Generate YouTube Metadata  ─────────────────────────
+
+app.post('/api/generate/youtube', async (req, res) => {
+  const { story, length, format, idea } = req.body;
+
+  if (!story || typeof story !== 'string' || story.trim().length === 0) {
+    return res.status(400).json({ error: 'Story text is required.', code: 'VALIDATION_ERROR' });
+  }
+  if (story.length > 10000) {
+    return res.status(400).json({ error: 'Story text is too long (max 10000 characters).', code: 'VALIDATION_ERROR' });
+  }
+
+  const formatType = format === 'shorts' ? 'shorts' : 'video';
+  const duration = formatType === 'shorts'
+    ? parseInt(length, 10) || 60
+    : parseInt(length, 10) || 5;
+
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(503).json({
+      error: 'No AI service configured. Set GEMINI_API_KEY via /setup or .env, then restart.',
+      code: 'NO_API_KEY',
+    });
+  }
+
+  try {
+    const truncatedStory = story.length > 6000 ? story.substring(0, 6000) + '...' : story;
+    const prompt = buildYouTubePrompt(truncatedStory, duration, formatType, idea || '');
+    console.log('[youtube] Generating metadata for "' + (idea || 'untitled') + '"...');
+
+    const raw = await callGemini(prompt, { maxOutputTokens: 4096 });
+    const metadata = parseJsonResponse(raw);
+
+    // Validate required fields
+    const required = ['title', 'description', 'thumbnail_concept', 'production_plan', 'tags'];
+    for (const field of required) {
+      if (!(field in metadata) || metadata[field] === null || metadata[field] === undefined) {
+        throw Object.assign(new Error('Missing required field "' + field + '" in AI response.'), {
+          code: 'PARSE_ERROR',
+          userMessage: 'The AI returned incomplete metadata. Please try again.',
+        });
+      }
+    }
+
+    res.json({
+      title: metadata.title,
+      description: metadata.description,
+      thumbnail: metadata.thumbnail_concept,
+      productionPlan: metadata.production_plan,
+      tags: metadata.tags,
+    });
+  } catch (err) {
+    console.error('[youtube] Error:', err.code, err.message);
+    if (err.code === 'PARSE_ERROR') {
+      return res.status(200).json({
+        error: err.userMessage || err.message,
+        code: 'PARSE_ERROR',
+        rawOutput: err.rawOutput || '',
+      });
+    }
+    const status = err.status || 500;
+    res.status(status).json({
+      error: err.userMessage || err.message,
+      code: err.code || 'API_ERROR',
+    });
+  }
+});
+
+// ──  Error handlers  ─────────────────────────────────────────
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found.', code: 'NOT_FOUND' });
+});
+
+// Global error handler
+app.use((err, _req, res, _next) => {
+  console.error('[server] Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error.', code: 'INTERNAL_ERROR' });
+});
+
+// ──  Start server  ────────────────────────────────────────────
+
+app.listen(PORT, () => {
+  const hasKey = !!process.env.GEMINI_API_KEY;
+  console.log('\n\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605');
+  console.log('  Horror Studio AI — Stage 1 Backend');
+  console.log('\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605');
+  console.log('  Server:      http://0.0.0.0:' + PORT);
+  console.log('  API Key:     ' + (hasKey ? '\u2713 Configured' : '\u2717 NOT SET'));
+  console.log('  Model:       ' + (process.env.GEMINI_MODEL || 'gemini-2.0-flash'));
+  console.log('  Setup page:  http://0.0.0.0:' + PORT + '/setup');
+  console.log('  Endpoints:');
+  console.log('    GET  /api/health');
+  console.log('    POST /api/generate/story');
+  console.log('    POST /api/generate/youtube');
+  console.log('\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\u2605\n');
+});

@@ -502,3 +502,222 @@ body::before {
   background: var(--border);
   border-radius: 3px;
 }
+
+/* =========================================
+   Stage 1 additions — format selector,
+   loading overlay, metadata display
+   ========================================= */
+
+/* —  Segmented control (Video vs Shorts)  — */
+
+.form-group {
+  margin-top: 16px;
+}
+
+.segmented-control {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 4px;
+  margin-top: 8px;
+}
+
+.segment-button {
+  flex: 1;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-radius: 8px;
+  padding: 12px 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.segment-button.active {
+  background: linear-gradient(180deg, var(--crimson), var(--dark-red));
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(139, 0, 0, 0.35);
+}
+
+.segment-button:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+.segment-button:focus {
+  outline: none;
+}
+
+/* —  Loading overlay  — */
+
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 0, 0, 0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 99;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.loading-overlay.hidden {
+  display: none;
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid var(--border);
+  border-top-color: var(--crimson);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  margin-top: 16px;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+  text-align: center;
+  max-width: 80%;
+}
+
+/* —  Hidden utility  — */
+
+.hidden {
+  display: none !important;
+}
+
+/* —  YouTube metadata display  — */
+
+.youtube-output .meta-block {
+  margin-bottom: 16px;
+}
+
+.youtube-output .meta-block:last-child {
+  margin-bottom: 0;
+}
+
+.youtube-output .meta-section-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.youtube-output .meta-title {
+  color: var(--blood);
+  font-weight: 600;
+  font-size: 1.05rem;
+  line-height: 1.4;
+}
+
+.youtube-output .meta-description {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+
+.youtube-output .meta-error {
+  background: rgba(139, 0, 0, 0.12);
+  border: 1px solid var(--crimson);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.youtube-output .meta-error strong {
+  color: var(--blood);
+}
+
+.youtube-output .raw-output {
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.youtube-output .production-plan {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.youtube-output .production-plan li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  display: flex;
+  gap: 8px;
+}
+
+.youtube-output .production-plan li:last-child {
+  border-bottom: none;
+}
+
+.youtube-output .tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.youtube-output .tag {
+  background: rgba(139, 0, 0, 0.2);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+}
+
+/* —  Mobile adjustments for Stage 1 — */
+
+@media (max-width: 600px) {
+  .segment-button {
+    font-size: 0.85rem;
+    padding: 14px 8px;
+  }
+
+  .loading-text {
+    font-size: 0.85rem;
+  }
+
+  .youtube-output .meta-section-title {
+    font-size: 0.68rem;
+  }
+
+  .youtube-output .meta-description {
+    font-size: 0.85rem;
+  }
+
+  .youtube-output .production-plan li {
+    font-size: 0.85rem;
+    flex-direction: column;
+    gap: 2px;
+  }
+}
