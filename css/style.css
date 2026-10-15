@@ -484,6 +484,184 @@ body::before {
   }
 }
 
+/* —  Language toggle  — */
+
+.lang-toggle {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  margin-bottom: 12px;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.lang-btn {
+  flex: 1;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.lang-btn.active {
+  background: linear-gradient(180deg, var(--crimson), var(--dark-red));
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(139, 0, 0, 0.35);
+}
+
+.lang-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+/* —  Horror style select  — */
+
+.style-select {
+  width: 100%;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--text-primary);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  font-size: 1rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  margin-top: 6px;
+}
+
+.style-select:focus {
+  outline: none;
+  border-color: var(--crimson);
+  box-shadow: 0 0 0 3px rgba(139, 0, 0, 0.25);
+}
+
+.style-select option {
+  background: var(--deep-red);
+  color: var(--text-primary);
+}
+
+/* —  YouTube metadata editable fields  — */
+
+.meta-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--text-primary);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: horizontal;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.meta-input:focus {
+  outline: none;
+  border-color: var(--crimson);
+  box-shadow: 0 0 0 3px rgba(139, 0, 0, 0.25);
+}
+
+.meta-textarea {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--text-primary);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.meta-textarea:focus {
+  outline: none;
+  border-color: var(--crimson);
+  box-shadow: 0 0 0 3px rgba(139, 0, 0, 0.25);
+}
+
+/* —  Production plan list in metadata  — */
+
+.production-plan-list {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+}
+
+.production-plan-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.production-plan-list li:last-child {
+  border-bottom: none;
+}
+
+/* —  Meta block on editable metadata  — */
+
+.meta-block {
+  margin-bottom: 16px;
+}
+
+.meta-block:last-child {
+  margin-bottom: 0;
+}
+
+.meta-section-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+/* —  Error item styling  — */
+
+.error-item {
+  color: var(--text-secondary);
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  word-break: break-word;
+}
+
+/* —  RTL Support (Arabic)  — */
+
+html[lang="ar"] {
+  direction: rtl;
+  text-align: right;
+}
+
+html[lang="ar"] .lang-toggle {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+html[lang="ar"] .atmosphere,
+html[lang="ar"] body::before {
+  /* atmosphere works the same in RTL */
+}
+
+html[lang="ar"] .idea-input,
+html[lang="ar"] .meta-textarea,
+html[lang="ar"] .meta-input {
+  direction: rtl;
+  text-align: right;
+}
+
 /* —  Scrollbar (dark)  — */
 
 .story-output::-webkit-scrollbar,

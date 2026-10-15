@@ -364,7 +364,7 @@ app.get('/api/health', (_req, res) => {
 // ──  API: Generate Story ─────────────────────────────────────
 
 app.post('/api/generate/story', async (req, res) => {
-  const { idea, length, format } = req.body;
+  const { idea, length, format, style } = req.body;
 
   if (!idea || typeof idea !== 'string' || idea.trim().length === 0) {
     return res.status(400).json({ error: 'Story idea is required.', code: 'VALIDATION_ERROR' });
@@ -393,7 +393,7 @@ app.post('/api/generate/story', async (req, res) => {
   }
 
   try {
-    const prompt = buildStoryPrompt(idea, duration, formatType);
+    const prompt = buildStoryPrompt(idea, duration, formatType, style);
     console.log('[story] Generating "' + idea + '" (' + formatType + ', ' + duration + ')...');
 
     const story = await callGemini(prompt, { maxOutputTokens: 4096 });
@@ -405,6 +405,7 @@ app.post('/api/generate/story', async (req, res) => {
       wordCount,
       format: formatType,
       length: duration,
+      style: style || 'none',
       idea: idea.trim(),
     });
   } catch (err) {
@@ -449,7 +450,7 @@ app.post('/api/generate/youtube', async (req, res) => {
     const raw = await callGemini(prompt, { maxOutputTokens: 4096 });
     const metadata = parseJsonResponse(raw);
 
-    const required = ['title', 'description', 'thumbnail_concept', 'production_plan', 'tags'];
+    const required = ['title', 'description', 'thumbnail_concept', 'thumbnail_prompt', 'production_plan', 'tags'];
     for (const field of required) {
       if (!(field in metadata) || metadata[field] === null || metadata[field] === undefined) {
         throw Object.assign(new Error('Missing required field "' + field + '" in AI response.'), {
@@ -463,6 +464,7 @@ app.post('/api/generate/youtube', async (req, res) => {
       title: metadata.title,
       description: metadata.description,
       thumbnail: metadata.thumbnail_concept,
+      thumbnailPrompt: metadata.thumbnail_prompt,
       productionPlan: metadata.production_plan,
       tags: metadata.tags,
     });

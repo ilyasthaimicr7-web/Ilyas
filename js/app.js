@@ -8,6 +8,7 @@
  *  Features:
  *    - Generate horror stories via Gemini API (long-form & Shorts)
  *    - Generate YouTube metadata (title, description, thumbnail, production plan)
+ *    - i18n: English & Arabic (RTL) support
  *    - Copy to clipboard (story & metadata)
  *    - Demo Mode for offline UI testing
  *    - Loading states, error handling, user-friendly messages
@@ -25,12 +26,23 @@ const $generate     = document.getElementById('generateBtn');
 const $storyOut     = document.getElementById('storyOutput');
 const $copyStory    = document.getElementById('copyStoryBtn');
 const $ytGenerate   = document.getElementById('generateYoutubeBtn');
-const $ytOut        = document.getElementById('youtubeOutput');
 const $copyYt       = document.getElementById('copyYoutubeBtn');
 const $status       = document.getElementById('status');
 const $demoToggle   = document.getElementById('demoToggle');
 const $loading      = document.getElementById('loadingOverlay');
 const $loadingText  = document.getElementById('loadingText');
+
+const $langToggle   = document.getElementById('langToggle');
+const $langBtns     = document.querySelectorAll('.lang-btn');
+const $horrorStyle = document.getElementById('horrorStyle');
+
+// YouTube metadata editable fields
+const $ytTitle          = document.getElementById('ytTitle');
+const $ytDescription    = document.getElementById('ytDescription');
+const $ytThumbnail      = document.getElementById('ytThumbnail');
+const $ytThumbnailPrompt = document.getElementById('ytThumbnailPrompt');
+const $ytProductionPlan = document.getElementById('ytProductionPlan');
+const $ytTags           = document.getElementById('ytTags');
 
 // ===========================================================================
 //  State
@@ -38,6 +50,154 @@ const $loadingText  = document.getElementById('loadingText');
 
 let currentFormat = 'video';
 let currentStory = '';
+let currentLanguage = 'en';
+let currentStyle = 'none';
+
+// ===========================================================================
+//  Translations
+// ===========================================================================
+
+const translations = {
+  en: {
+    title: 'HORROR STUDIO AI',
+    subtitle: 'Craft cinematic horror stories for YouTube',
+    storySeed: 'Story Seed',
+    ideaHelp: 'Describe your horror concept in a few words. The AI will turn it into a full cinematic story.',
+    ideaPlaceholder: 'e.g. A child\'s doll that whispers the names of the dead...',
+    contentType: 'Content Type',
+    youtubeVideo: 'YouTube Video',
+    youtubeShorts: 'YouTube Shorts',
+    duration: 'Duration',
+    horrorStyle: 'Horror Style',
+    styles: {
+      none: 'General Horror',
+      psychological: 'Psychological',
+      supernatural: 'Supernatural',
+      gothic: 'Gothic',
+      cosmic: 'Cosmic',
+      folk: 'Folk Horror',
+      slasher: 'Slasher',
+      zombie: 'Zombie',
+    },
+    demoMode: 'Demo Mode (test UI without AI)',
+    demoHelp: 'When ON, the app fills the interface with clearly-labeled [DEMO] placeholder content.',
+    generateStory: 'Generate Story',
+    generatedStory: 'Generated Story',
+    storyPlaceholder: 'Your horror story will appear here.',
+    copyStory: 'Copy Story',
+    generateYoutube: 'Generate YouTube Title & Description',
+    loadingStory: 'Generating your horror story...',
+    loadingYoutube: 'Generating YouTube title, description, thumbnail, and production plan...',
+    youtubeMetadata: 'YouTube Metadata',
+    title: 'Title',
+    description: 'Description',
+    thumbnail: 'Thumbnail Concept',
+    thumbnailPrompt: 'Thumbnail Prompt',
+    productionPlan: 'Production Plan',
+    tags: 'Tags',
+    copyMetadata: 'Copy Metadata',
+    ytTitlePlaceholder: 'YouTube title will appear here',
+    ytDescriptionPlaceholder: 'YouTube description will appear here',
+    ytThumbnailPlaceholder: 'Thumbnail concept will appear here',
+    ytThumbnailPromptPlaceholder: 'AI image generation prompt will appear here',
+    ytTagsPlaceholder: 'Tags will appear here, separated by commas',
+  },
+  ar: {
+    title: 'هورر ستوديو آي أيه',
+    subtitle: 'اصنع قصص رعب سينمائية ليوتيوب',
+    storySeed: 'بذرة القصة',
+    ideaHelp: 'اكتب فكرة رعبك بكلمات قليلة. سيحوّلها الذكاء الاصطناعي إلى قصة سينمائية كاملة.',
+    ideaPlaceholder: 'مثال: كتلة دمي قديمة تهمس بأسماء الموتى...',
+    contentType: 'نوع المحتوى',
+    youtubeVideo: 'فيديو يوتيوب',
+    youtubeShorts: 'شورتس يوتيوب',
+    duration: 'المدة',
+    horrorStyle: 'نمط الرعب',
+    styles: {
+      none: 'رعب عام',
+      psychological: 'نفساني',
+      supernatural: 'خارق',
+      gothic: 'قوطي',
+      cosmic: 'كوني',
+      folk: 'شعبي',
+      slasher: 'قاتل متكرر',
+      zombie: 'ميت شرى',
+    },
+    demoMode: 'وضع العرض التوضيحي (اختبار الواجهة بدون ذكاء اصطناعي)',
+    demoHelp: 'عند التشغيل، يملأ التطبيق الواجهة بمحتوى تجريبي مُعلّق [تجريبي].',
+    generateStory: 'إنشاء القصة',
+    generatedStory: 'القصة المنشأة',
+    storyPlaceholder: 'ستظهر قصتك الرعب هنا.',
+    copyStory: 'نسخ القصة',
+    generateYoutube: 'إنشئ عنوان يوتيوب ووصف',
+    loadingStory: 'جارٍ إنشاء قصتك الرعب...',
+    loadingYoutube: 'جارٍ إنشاء عنوان ووصف ويوتيوب والصورة المصغرة وخطة الإنتاج...',
+    youtubeMetadata: 'بيانات يوتيوب الوصفية',
+    title: 'العنوان',
+    description: 'الوصف',
+    thumbnail: 'فكرة الصورة المصغرة',
+    thumbnailPrompt: 'موجه صورة مصغرة',
+    productionPlan: 'خطة الإنتاج',
+    tags: 'العلامات',
+    copyMetadata: 'نسخ البيانات الوصفية',
+    ytTitlePlaceholder: 'سيظهر عنوان يوتيوب هنا',
+    ytDescriptionPlaceholder: 'سيظهر وصف يوتيوب هنا',
+    ytThumbnailPlaceholder: 'سيظهر مفهوم الصورة المصغرة هنا',
+    ytThumbnailPromptPlaceholder: 'سيظهر موجه لتوليد صورة مصغرة هنا',
+    ytTagsPlaceholder: 'سيظهر العلامات هنا، مفصولة بفواصل',
+  },
+};
+
+// ===========================================================================
+//  i18n
+// ===========================================================================
+
+function switchLanguage(lang) {
+  currentLanguage = lang;
+  $langBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.lang === lang);
+  });
+  document.documentElement.lang = lang;
+  document.body.dir = lang === 'ar' ? 'rtl' : 'ltr';
+  updateTexts();
+}
+
+function getText(key) {
+  const lang = translations[currentLanguage] || translations.en;
+  return key.split('.').reduce((obj, k) => (obj && obj[k] !== undefined ? obj[k] : ''), lang);
+}
+
+function updateTexts() {
+  const elements = document.querySelectorAll('[data-i18n]');
+  elements.forEach((el) => {
+    const key = el.getAttribute('data-i18n');
+    const value = getText(key);
+    if (value) {
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') {
+        el.placeholder = value;
+      } else {
+        el.textContent = value;
+      }
+    }
+  });
+
+  // Update length options
+  updateDurationOptions();
+
+  // Update style options text
+  updateStyleOptions();
+}
+
+function updateStyleOptions() {
+  const options = $horrorStyle.querySelectorAll('option');
+  options.forEach((opt) => {
+    const key = opt.getAttribute('data-i18n');
+    if (key) {
+      const value = getText(key);
+      if (value) opt.textContent = value;
+    }
+  });
+}
 
 // ===========================================================================
 //  Demo placeholder content (clearly labeled — for offline UI testing only)
@@ -61,19 +221,6 @@ When the police found Mara the next morning, she was sitting cross-legged in the
 
 The house was sold last month. The new owners say the walls don't weep anymore. They say that's because nothing's left to weep for.`;
 
-const DEMO_YOUTUBE = {
-  title: '[CREEPY STORY] The Weeping Child in the Walls of Sycamore Lane',
-  description: `In this unsettling tale, Mara moves into a long-abandoned Victorian only to discover that something far more sinister than dust has been waiting inside the walls. A child's weeping, a hidden room, and a porcelain doll with a voice that doesn't belong to it — some doors, once opened, can never be closed again.\n\n🔔 Subscribe for more horror stories every week!\n🔔 Turn on notifications so you never miss a new video!\n\n#HorrorStory #Creepy #ShortStory #Scary #Horror #TheWeepingChild #ShortFilm #ScaryStory`,
-  thumbnail: `A cracked porcelain doll's face with one glassy eye reflecting a dark hallway. Deep crimson and black color palette. Vintage Victorian wallpaper peeling in the background. Text overlay: "IT'S NOT CRYING..." in distressed white font.`,
-  productionPlan: [
-    { scene: 1, description: 'Establish the Victorian house exterior at dusk, fog rolling in', duration: 15 },
-    { scene: 2, description: 'Mara hears the weeping, follows it to the hidden parlor room', duration: 30 },
-    { scene: 3, description: 'Close-up of the porcelain doll turning its head', duration: 20 },
-    { scene: 4, description: 'Police arrive, find Mara rocking an invisible child', duration: 25 },
-  ],
-  tags: ['#HorrorStory', '#Creepy', '#ShortStory', '#Scary', '#Horror']
-};
-
 // ===========================================================================
 //  Event listeners
 // ===========================================================================
@@ -94,12 +241,24 @@ $formatBtns.forEach((btn) => {
   });
 });
 
+$langBtns.forEach((btn) => {
+  btn.addEventListener('click', () => switchLanguage(btn.dataset.lang));
+});
+
+if ($horrorStyle) {
+  $horrorStyle.addEventListener('change', () => {
+    currentStyle = $horrorStyle.value;
+  });
+}
+
 // ===========================================================================
 //  Initialization
 // ===========================================================================
 
 document.addEventListener('DOMContentLoaded', () => {
   updateDurationOptions();
+  updateStyleOptions();
+  switchLanguage(currentLanguage);
   checkBackendStatus();
 });
 
@@ -109,33 +268,43 @@ document.addEventListener('DOMContentLoaded', () => {
 function updateDurationOptions() {
   const options = currentFormat === 'shorts'
     ? [
-        { value: 30, label: '30 seconds' },
-        { value: 45, label: '45 seconds' },
-        { value: 60, label: '60 seconds' },
+        { value: 30, label: translations.en.duration_30s || '30 seconds' },
+        { value: 45, label: translations.en.duration_45s || '45 seconds' },
+        { value: 60, label: translations.en.duration_60s || '60 seconds' },
       ]
     : [
-        { value: 3, label: '3 minutes' },
-        { value: 5, label: '5 minutes' },
-        { value: 10, label: '10 minutes' },
+        { value: 3, label: translations.en.duration_3m || '3 minutes' },
+        { value: 5, label: translations.en.duration_5m || '5 minutes' },
+        { value: 10, label: translations.en.duration_10m || '10 minutes' },
       ];
 
-  // Preserve selected value if possible
+  if (currentLanguage === 'ar') {
+    options[0].label = '30 ثوانٍ';
+    options[1].label = '45 ثانية';
+    options[2].label = '60 ثانية';
+    if (currentFormat === 'video') {
+      options[0] = { value: 3, label: '3 دقائق' };
+      options[1] = { value: 5, label: '5 دقائق' };
+      options[2] = { value: 10, label: '10 دقائق' };
+    }
+  }
+
   const currentVal = $length.value;
   $length.innerHTML = '';
+  let selectedSet = false;
   options.forEach((opt) => {
     const el = document.createElement('option');
     el.value = opt.value;
     el.textContent = opt.label;
-    if (String(opt.value) === currentVal && currentFormat !== 'shorts' || 
-        String(opt.value) === currentVal && currentFormat === 'shorts') {
+    if (String(opt.value) === currentVal) {
       el.selected = true;
-    }
-    // Select first option if nothing matches or format changed
-    if (!el.selected && options.indexOf(opt) === 0) {
-      el.selected = true;
+      selectedSet = true;
     }
     $length.appendChild(el);
   });
+  if (!selectedSet && options.length > 0) {
+    $length.selectedIndex = 0;
+  }
 }
 
 /**
@@ -182,13 +351,18 @@ async function handleGenerateStory() {
     return;
   }
 
-  // Real API call
-  setLoading(true, 'Generating your horror story...');
+  setLoading(true, getText('loadingStory'));
   try {
     const res = await fetch('/api/generate/story', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idea, length, format: currentFormat }),
+      body: JSON.stringify({
+        idea,
+        length,
+        format: currentFormat,
+        style: currentStyle,
+        language: currentLanguage,
+      }),
     });
 
     const data = await res.json();
@@ -223,8 +397,7 @@ async function handleGenerateYoutube() {
     return;
   }
 
-  // Real API call
-  setLoading(true, 'Generating YouTube title, description, thumbnail, and production plan...');
+  setLoading(true, getText('loadingYoutube'));
   try {
     const res = await fetch('/api/generate/youtube', {
       method: 'POST',
@@ -234,6 +407,8 @@ async function handleGenerateYoutube() {
         length: parseInt($length.value, 10),
         format: currentFormat,
         idea: $idea.value.trim(),
+        style: currentStyle,
+        language: currentLanguage,
       }),
     });
 
@@ -241,6 +416,11 @@ async function handleGenerateYoutube() {
 
     if (!res.ok) {
       handleApiError(data, 'metadata generation');
+      return;
+    }
+
+    if (data.code === 'PARSE_ERROR') {
+      renderYoutubeError(data);
       return;
     }
 
@@ -254,14 +434,14 @@ async function handleGenerateYoutube() {
 }
 
 function handleCopyStory() {
-  const text = $storyOut.textContent.trim();
-  copyToClipboard(text, 'Story copied to clipboard.');
+  const text = $storyOut.value.trim();
+  copyToClipboard(text, getText('copyStory') + ' ' + (currentLanguage === 'ar' ? 'تم النسخ' : 'copied.'));
 }
 
 function handleCopyYoutube() {
   const meta = collectYoutubeMetadata();
   if (!meta) return;
-  copyToClipboard(meta, 'YouTube metadata copied to clipboard.');
+  copyToClipboard(meta, getText('copyMetadata') + ' ' + (currentLanguage === 'ar' ? 'تم النسخ' : 'copied.'));
 }
 
 // ===========================================================================
@@ -269,66 +449,51 @@ function handleCopyYoutube() {
 // ===========================================================================
 
 function renderStory(text) {
-  $storyOut.innerHTML = '';
-  $storyOut.textContent = text;
+  $storyOut.value = text;
 }
 
 /**
- * Render YouTube metadata in the output panel.
- * Supports both full metadata and error/parse responses.
+ * Render YouTube metadata into the editable fields.
  */
 function renderYoutube(meta) {
-  // If the backend returned a parse error with raw output, show it for inspection
-  if (meta.code === 'PARSE_ERROR') {
-    $ytOut.innerHTML = `
-      <div class="meta-error">
-        <strong>Response Parsing Issue</strong>
-        <p>The AI response could not be parsed as JSON. The raw output is shown below for debugging:</p>
-        <pre class="raw-output">${escapeHtml(meta.rawOutput || meta.error || 'No raw output available')}</pre>
-      </div>
-    `;
-    return;
-  }
+  if ($ytTitle) $ytTitle.value = meta.title || '';
+  if ($ytDescription) $ytDescription.value = meta.description || '';
+  if ($ytThumbnail) $ytThumbnail.value = meta.thumbnail || '';
+  if ($ytThumbnailPrompt) $ytThumbnailPrompt.value = meta.thumbnailPrompt || '';
 
-  const planItems = (meta.productionPlan || meta.production_plan || [])
-    .map((item) => {
+  const plan = meta.productionPlan || [];
+  if ($ytProductionPlan) {
+    $ytProductionPlan.innerHTML = '';
+    plan.forEach((item) => {
       const sceneNum = item.scene || item.sceneNumber || '?';
       const desc = item.description || '';
       const dur = item.duration || 0;
-      return `<li><strong>Scene ${sceneNum}</strong> — ${escapeHtml(desc)} · ~${dur}s</li>`;
-    })
-    .join('');
+      const li = document.createElement('li');
+      li.textContent = `Scene ${sceneNum} — ${desc} (~${dur}s)`;
+      $ytProductionPlan.appendChild(li);
+    });
+    if (plan.length === 0) {
+      const li = document.createElement('li');
+      li.textContent = 'No plan generated.';
+      $ytProductionPlan.appendChild(li);
+    }
+  }
 
-  const tags = (meta.tags || [])
-    .map((t) => `<span class="tag">${escapeHtml(t)}</span>`)
-    .join('');
+  if ($ytTags) {
+    const tags = Array.isArray(meta.tags) ? meta.tags : [];
+    $ytTags.value = tags.join(', ');
+  }
+}
 
-  $ytOut.innerHTML = `
-    <div class="meta-block">
-      <div class="meta-section-title">Title</div>
-      <div class="meta-title">${escapeHtml(meta.title || '')}</div>
-    </div>
-
-    <div class="meta-block">
-      <div class="meta-section-title">Description</div>
-      <div class="meta-description">${escapeHtml(meta.description || '')}</div>
-    </div>
-
-    <div class="meta-block">
-      <div class="meta-section-title">Thumbnail Concept</div>
-      <div class="meta-description">${escapeHtml(meta.thumbnail || '')}</div>
-    </div>
-
-    <div class="meta-block">
-      <div class="meta-section-title">Production Plan</div>
-      <ul class="production-plan">${planItems || '<li>No plan generated.</li>'}</ul>
-    </div>
-
-    <div class="meta-block">
-      <div class="meta-section-title">Tags</div>
-      <div class="tag-list">${tags}</div>
-    </div>
-  `;
+/**
+ * Render a parse error with raw output for debugging.
+ */
+function renderYoutubeError(meta) {
+  const plan = $ytProductionPlan;
+  if (plan) {
+    plan.innerHTML = `<li class="error-item">${escapeHtml(meta.rawOutput || meta.error || 'No raw output available')}</li>`;
+  }
+  showStatus('YouTube metadata could not be parsed. Raw output shown for debugging.', 'warning');
 }
 
 // ===========================================================================
@@ -356,7 +521,6 @@ function copyToClipboard(text, successMsg) {
   navigator.clipboard.writeText(text).then(() => {
     showStatus(successMsg, 'success');
   }).catch(() => {
-    // Fallback for older browsers / mobile
     const ta = document.createElement('textarea');
     ta.value = text;
     document.body.appendChild(ta);
@@ -369,23 +533,17 @@ function copyToClipboard(text, successMsg) {
 }
 
 /**
- * Collect all YouTube metadata text for copying.
+ * Collect all YouTube metadata text from editable fields for copying.
  */
 function collectYoutubeMetadata() {
-  const titleEl = $ytOut.querySelector('.meta-title');
-  const descEl = $ytOut.querySelector('.meta-description');
+  const title = $ytTitle ? $ytTitle.value.trim() : '';
+  const desc = $ytDescription ? $ytDescription.value.trim() : '';
 
-  if (!titleEl && !descEl) {
-    showStatus('No YouTube metadata to copy. Generate metadata first.', 'warning');
-    return null;
+  let plan = '';
+  if ($ytProductionPlan) {
+    const items = $ytProductionPlan.querySelectorAll('li');
+    plan = Array.from(items).map((li) => li.textContent).join('\n');
   }
-
-  const title = titleEl ? titleEl.textContent : '';
-  const desc = descEl ? descEl.textContent : '';
-
-  // Collect production plan items
-  const planItems = $ytOut.querySelectorAll('.production-plan li');
-  const plan = Array.from(planItems).map((li) => li.textContent).join('\n');
 
   const parts = [];
   if (title) parts.push(`TITLE:\n${title}`);

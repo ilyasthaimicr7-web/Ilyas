@@ -15,37 +15,56 @@
 
   <div class="app-container">
     <header class="header">
-      <h1 class="title">HORROR STUDIO AI</h1>
-      <p class="subtitle">Craft cinematic horror stories for YouTube</p>
+      <div class="lang-toggle" id="langToggle">
+        <button type="button" class="lang-btn active" data-lang="en">EN</button>
+        <button type="button" class="lang-btn" data-lang="ar">عربي</button>
+      </div>
+      <h1 class="title" data-i18n="title">HORROR STUDIO AI</h1>
+      <p class="subtitle" data-i18n="subtitle">Craft cinematic horror stories for YouTube</p>
     </header>
 
     <main class="main">
       <section class="input-card card">
-        <h2 class="card-title">Story Seed</h2>
-        <p class="help-text">Describe your horror concept in a few words. The AI will turn it into a full cinematic story.</p>
+        <h2 class="card-title" data-i18n="storySeed">Story Seed</h2>
+        <p class="help-text" data-i18n="ideaHelp">Describe your horror concept in a few words. The AI will turn it into a full cinematic story.</p>
 
         <textarea
           id="storyIdea"
           class="idea-input"
+          data-i18n-placeholder="ideaPlaceholder"
           placeholder="e.g. A child's doll that whispers the names of the dead..."
           rows="4"
           maxlength="1000"
         ></textarea>
 
         <div class="form-group">
-          <label class="form-label">Content Type</label>
+          <label class="form-label" for="formatToggle" data-i18n="contentType">Content Type</label>
           <div class="segmented-control" role="radiogroup" id="formatToggle">
-            <button type="button" class="segment-button active" data-format="video" role="radio" aria-checked="true">YouTube Video</button>
-            <button type="button" class="segment-button" data-format="shorts" role="radio" aria-checked="false">YouTube Shorts</button>
+            <button type="button" class="segment-button active" data-format="video" role="radio" aria-checked="true" data-i18n="youtubeVideo">YouTube Video</button>
+            <button type="button" class="segment-button" data-format="shorts" role="radio" aria-checked="false" data-i18n="youtubeShorts">YouTube Shorts</button>
           </div>
         </div>
 
         <div class="form-row">
-          <label class="form-label" for="storyLength">Duration</label>
+          <label class="form-label" for="storyLength" data-i18n="duration">Duration</label>
           <select id="storyLength" class="length-select">
             <option value="3">3 minutes</option>
             <option value="5" selected>5 minutes</option>
             <option value="10">10 minutes</option>
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label class="form-label" for="horrorStyle" data-i18n="horrorStyle">Horror Style</label>
+          <select id="horrorStyle" class="style-select">
+            <option value="none" data-i18n="styles.none">General Horror</option>
+            <option value="psychological" data-i18n="styles.psychological">Psychological</option>
+            <option value="supernatural" data-i18n="styles.supernatural">Supernatural</option>
+            <option value="gothic" data-i18n="styles.gothic">Gothic</option>
+            <option value="cosmic" data-i18n="styles.cosmic">Cosmic</option>
+            <option value="folk" data-i18n="styles.folk">Folk Horror</option>
+            <option value="slasher" data-i18n="styles.slasher">Slasher</option>
+            <option value="zombie" data-i18n="styles.zombie">Zombie</option>
           </select>
         </div>
 
@@ -55,44 +74,76 @@
             <span class="switch-track">
               <span class="switch-thumb"></span>
             </span>
-            <span class="switch-text">Demo Mode (test UI without AI)</span>
+            <span class="switch-text" data-i18n="demoMode">Demo Mode (test UI without AI)</span>
           </label>
-          <p class="help-text-small">
-            When ON, the app fills the interface with clearly-labeled [DEMO] placeholder content so you can test all buttons while offline.
+          <p class="help-text-small" data-i18n="demoHelp">
+            When ON, the app fills the interface with clearly-labeled [DEMO] placeholder content.
           </p>
         </div>
 
-        <button id="generateBtn" class="btn btn-primary btn-block">Generate Story</button>
+        <button id="generateBtn" class="btn btn-primary btn-block" data-i18n="generateStory">Generate Story</button>
       </section>
 
       <div id="loadingOverlay" class="loading-overlay">
         <div class="loading-spinner"></div>
-        <p id="loadingText" class="loading-text">Generating your horror story...</p>
+        <p id="loadingText" class="loading-text" data-i18n="loadingStory">Generating your horror story...</p>
       </div>
 
       <section class="output-card card">
-        <h2 class="card-title">Generated Story</h2>
-        <div id="storyOutput" class="story-output" aria-live="polite">
-          <p class="placeholder-text">Your horror story will appear here.</p>
-        </div>
+        <h2 class="card-title" data-i18n="generatedStory">Generated Story</h2>
+        <textarea
+          id="storyOutput"
+          class="story-output"
+          data-i18n-placeholder="storyPlaceholder"
+          placeholder="Your horror story will appear here."
+          rows="15"
+        ></textarea>
         <div class="action-bar">
-          <button id="copyStoryBtn" class="btn btn-secondary">Copy Story</button>
-          <button id="generateYoutubeBtn" class="btn btn-secondary">Generate YouTube Title & Description</button>
+          <button id="copyStoryBtn" class="btn btn-secondary" data-i18n="copyStory">Copy Story</button>
+          <button id="generateYoutubeBtn" class="btn btn-secondary" data-i18n="generateYoutube">Generate YouTube Title & Description</button>
         </div>
       </section>
 
       <section class="youtube-card card">
-        <h2 class="card-title">YouTube Metadata</h2>
-        <div id="youtubeOutput" class="youtube-output" aria-live="polite">
-          <p class="placeholder-text">YouTube title, description, thumbnail concept, and production plan will appear here.</p>
+        <h2 class="card-title" data-i18n="youtubeMetadata">YouTube Metadata</h2>
+
+        <div class="meta-block">
+          <div class="meta-section-title" data-i18n="title">Title</div>
+          <input type="text" id="ytTitle" class="meta-input" data-i18n-placeholder="ytTitlePlaceholder" placeholder="YouTube title will appear here">
         </div>
-        <button id="copyYoutubeBtn" class="btn btn-secondary">Copy Metadata</button>
+
+        <div class="meta-block">
+          <div class="meta-section-title" data-i18n="description">Description</div>
+          <textarea id="ytDescription" class="meta-textarea" data-i18n-placeholder="ytDescriptionPlaceholder" placeholder="YouTube description will appear here" rows="4"></textarea>
+        </div>
+
+        <div class="meta-block">
+          <div class="meta-section-title" data-i18n="thumbnail">Thumbnail Concept</div>
+          <textarea id="ytThumbnail" class="meta-textarea" data-i18n-placeholder="ytThumbnailPlaceholder" placeholder="Thumbnail concept will appear here" rows="3"></textarea>
+        </div>
+
+        <div class="meta-block">
+          <div class="meta-section-title" data-i18n="thumbnailPrompt">Thumbnail Prompt</div>
+          <textarea id="ytThumbnailPrompt" class="meta-textarea" data-i18n-placeholder="ytThumbnailPromptPlaceholder" placeholder="AI image generation prompt will appear here" rows="3"></textarea>
+        </div>
+
+        <div class="meta-block">
+          <div class="meta-section-title" data-i18n="productionPlan">Production Plan</div>
+          <ul id="ytProductionPlan" class="production-plan"></ul>
+        </div>
+
+        <div class="meta-block">
+          <div class="meta-section-title" data-i18n="tags">Tags</div>
+          <input type="text" id="ytTags" class="meta-input" data-i18n-placeholder="ytTagsPlaceholder" placeholder="Tags will appear here, separated by commas">
+        </div>
+
+        <button id="copyYoutubeBtn" class="btn btn-secondary btn-block" data-i18n="copyMetadata">Copy Metadata</button>
       </section>
     </main>
 
     <footer class="footer">
       <div id="status" class="status"></div>
-      <p class="footer-text">Horror Studio AI &mdash; Stage 1 Backend</p>
+      <p class="footer-text">Horror Studio AI &mdash; Stage 1</p>
     </footer>
   </div>
 
